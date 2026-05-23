@@ -1,0 +1,23 @@
+{
+  "name": "claude-flask-builder",
+  "version": "1.0.0",
+  "description": "Build and extend production-grade Flask REST APIs on a fixed 4-layer architecture (Controller / Service / Validation+DTO / Model). Ships one skill and four specialized agents with a double-gated review loop and automated build+migrate+test runner.",
+  "author": {
+    "name": "TAIMOUR KHAN"
+  },
+  "homepage": "https://github.com/taimour1446/claude-flask-builder",
+  "repository": "https://github.com/taimour1446/claude-flask-builder",
+  "license": "MIT",
+  "keywords": [
+    "flask",
+    "python",
+    "rest-api",
+    "sqlalchemy",
+    "marshmallow",
+    "jwt",
+    "alembic",
+    "pytest",
+    "scaffolding",
+    "code-review"
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "name": "taimour1446",
+  "owner": { "name": "TAIMOUR KHAN" },
+  "metadata": {
+    "description": "Marketplace for the claude-flask-builder Claude Code plugin — production-grade Flask REST API scaffolding & feature building, with a self-reviewing build loop and automated build+migrate+test runner.",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "claude-flask-builder",
+      "source": "./",
+      "description": "Scaffolds and extends production-grade Flask REST APIs on a fixed 4-layer architecture (Controller/Service/Validation+DTO/Model). Ships 1 skill + 4 specialized agents with a double-gated review loop, automated pytest runner, and 300+ baked-in corrections vs a real reference codebase.",
+      "version": "1.0.0",
+      "author": { "name": "TAIMOUR KHAN" }
+    }
+  ]
+}
