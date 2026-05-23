@@ -21,7 +21,7 @@ class <Name>Service:
     """Business logic for the <feature> domain."""
 
     @staticmethod
-    def create(request, current_user):
+    def create(request, current_user) -> dict:
         """Create a <Name>.
         :raises CustomValidationException: validation failure or duplicate
         """

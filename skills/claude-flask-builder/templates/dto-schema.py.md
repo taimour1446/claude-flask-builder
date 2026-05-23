@@ -17,7 +17,7 @@ class <Name>Schema(Schema):
     deleted_at = fields.DateTime(allow_none=True)
 
     @post_dump
-    def derive(self, data, **kwargs):
+    def derive(self, data, **kwargs) -> dict:
         """Enrichment hook — purely computational, NO DB queries (R27).
         Pre-join in the service if relations needed.
         """

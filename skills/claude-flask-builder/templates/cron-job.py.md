@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
     timezone='UTC',
     max_instances=1,   # P14-7 — required for multi-pod safety
 )
-def <name>_job():
+def <name>_job() -> None:
     """Daily UTC midnight — <what it does>."""
     with scheduler.app.app_context():
         # Distributed lock prevents N pods running same job at once

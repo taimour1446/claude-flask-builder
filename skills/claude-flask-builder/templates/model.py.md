@@ -26,12 +26,12 @@ class <Name>(db.Model):
         Index('ix_<name>s_user_active', 'user_id', 'deleted_at'),
     )
 
-    def to_dict(self):
+    def to_dict(self) -> dict:
         """Return a dict copy of all columns."""
         return {c.name: getattr(self, c.name) for c in self.__table__.columns}
 
     @staticmethod
-    def create(data, commit=True):
+    def create(data: dict, commit: bool = True):
         """Create a row. Pass commit=False when called inside a service transaction."""
         # Explicit field assignment (R61) — no model.__dict__.update(data)
         obj = <Name>(
@@ -45,12 +45,12 @@ class <Name>(db.Model):
         return obj
 
     @staticmethod
-    def get_by_id(id):
+    def get_by_id(id: int):
         """Fetch an active (non-deleted) <Name> by id."""
         return db.session.query(<Name>).filter_by(id=id, deleted_at=None).first()
 
     @staticmethod
-    def exists_by_name(name) -> bool:
+    def exists_by_name(name: str) -> bool:
         """Uniqueness check used by validation."""
         return db.session.query(<Name>.id).filter_by(name=name, deleted_at=None).first() is not None
 ```

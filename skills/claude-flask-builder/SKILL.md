@@ -72,6 +72,14 @@ code task.
 `seeder.py.md`, `webhook.py.md`, `cron-job.py.md`, `app-factory.py.md`,
 `env-example.md`.
 
+**Foundation utils** referenced in `scaffold-checklist.md` step 3 (Settings,
+Logging, BaseResponse, Auth, Validation, RequestInterceptor, Helper,
+TimezoneHelper, Constants, Configuration.py) are not separate template files —
+the scaffold-checklist itself + the patterns in `patterns.md` + `security.md`
+fully specify their shape. `flask-scaffolder` synthesizes them from those
+sources. The patterns are exhaustive enough that an additional skeleton per
+file would be redundant.
+
 ## Agents
 
 | Agent | Role |

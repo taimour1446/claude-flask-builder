@@ -34,25 +34,45 @@ Audit the plan (file list, snippets, migration outline) BEFORE code is written:
 PASS only if executing the plan faithfully would satisfy all rules.
 
 ### POST-CHECK — review CODE
-Read every changed file. Run:
-- `pipenv run ruff check <changed>` — type/format errors are FAIL.
-- `pipenv run black --check <changed>` — formatting is FAIL.
-- `grep` for forbidden patterns:
+Read every changed file. Two-stage approach: grep for cheap detection, then
+SEMANTIC READ for rules that grep cannot reliably enforce.
+
+**Stage 1 — automated checks:**
+- `pipenv run ruff check <changed>` — failures are FAIL.
+- `pipenv run black --check <changed>` — failures are FAIL.
+
+**Stage 2 — grep for forbidden patterns (cheap, reliable):**
   - `print(` in src → FAIL R18
   - `random.randrange|random.choice` for security → FAIL R20
-  - `Float` on a money column → FAIL R19
   - `model.__dict__.update` → FAIL R61
   - `unknown=INCLUDE` on request schemas → FAIL R62
-  - `text("..." + |text(f"|.format(` inside text() args → FAIL R42
   - `except:` (bare) → FAIL R17
   - `traceback.format_exc()` in respondError → FAIL R68
-  - Missing `timeout=` on requests.* → FAIL R80
-  - Stripe mutation without `idempotency_key=` → FAIL R81
-  - `pass` body in any downgrade() — FAIL R49
-  - method on model without `@staticmethod` → FAIL R43
   - `flask run` in Dockerfile/entrypoint → FAIL R111
 
+**Stage 3 — SEMANTIC READ (grep alone insufficient — false positive / negative
+risk). For each of these, OPEN the file and reason about context:**
+  - R19 (Float for money): grep `Column(Float` lists candidates; READ each to
+    decide if the column name is a money field (amount/price/cost/balance/fee/
+    payout/charge) vs. legitimate Float (latitude/longitude/percentage). FAIL
+    only money-shaped columns.
+  - R42 (.format/f-string in text()): grep `\.format\(\|f"\|f'` for candidates;
+    READ each to confirm the formatted string is the ARGUMENT to text() (not
+    incidental). FAIL only when inside text().
+  - R43 (model methods missing @staticmethod): READ each model file; identify
+    classes inheriting db.Model; for every `def name(...)` without `self` as
+    first param, require @staticmethod on the line above. FAIL each missing.
+  - R49 (downgrade=pass): READ each migration file in versions/; locate
+    `def downgrade()` and check the entire body — FAIL if body is only `pass`
+    (or empty). A multi-statement body that happens to contain `pass` is OK.
+  - R80 (timeout= on requests.*): grep `requests\.\(get\|post\|put\|delete\|patch\|request\)\(`
+    for candidates; READ each call's argument list — FAIL if `timeout=` is absent.
+    Also flag `requests.Session()` use that omits a default timeout.
+  - R81 (Stripe mutation without idempotency_key): grep `stripe\.\(PaymentIntent\|Refund\|Transfer\|Charge\|Customer\|Subscription\|Invoice\)\.create\b`
+    for candidates; READ the argument list — FAIL if `idempotency_key=` absent.
+
 Check ALL rule sections (1–12). Check security.md corrections one by one.
+Do NOT FAIL on a grep hit alone — confirm by reading the file.
 
 ## Verdict
 
