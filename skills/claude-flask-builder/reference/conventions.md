@@ -23,7 +23,7 @@
 - Settings class in utils/Settings.py reads + validates ALL env vars at startup
 - .env.example documents every var with safe placeholder
 - Required vars: DATABASE_URI, SECRET_KEY, BASE_URL
-- Optional toggled: STRIPE_SECRET, TWILIO_*, FCM_SERVER_KEY, AWS_*, GCS_BUCKET, etc.
+- Optional toggled: STRIPE_SECRET_KEY, STRIPE_PUBLISHABLE_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_RETURN_URL_ALLOWLIST, TWILIO_*, FCM_SERVER_KEY, AWS_*, GCS_BUCKET, etc.
 
 ## Logging
 - One named logger per module: `logger = logging.getLogger(__name__)`

@@ -28,6 +28,14 @@ invent. Cross-references after each line point to the authoritative section.
   `__init_subclass__`-like pattern OR a `@classmethod validate(cls)` called
   from `Configuration.configure_settings(app)`. (See `security.md` "What the
   scaffolder writes by default — Settings".)
+  **`configure_settings(app)` MUST mirror critical env values into `app.config`**:
+  at minimum `app.config["ENV"] = settings.ENV`, `app.config["SESSION_COOKIE_*"]`
+  flags (R74), and `app.config["MAX_CONTENT_LENGTH"]` (R63). This is what
+  lets `BaseResponse.respondError` gate its `trace` field on production
+  (`current_app.config.get("ENV") != "production"`).
+  **`SECRET_KEY`** must be `secrets.token_urlsafe(32)` (≥256 bits) — Settings
+  rejects a SECRET_KEY shorter than 32 raw bytes at startup. The placeholder
+  in `.env.example` is intentionally invalid so deploys fail fast.
 - **utils/Logging.py** — `configure_logging()` installs JSON formatter from
   `python-json-logger` when `ENV in {staging, production}`; plain stdlib
   formatter in dev. Root level driven by `LOG_LEVEL` env.
@@ -56,7 +64,8 @@ invent. Cross-references after each line point to the authoritative section.
 ### 5. Model: base auth
 - model/User.py with: id, email (UNIQUE), phone (UNIQUE), _password (hybrid+bcrypt), role,
   ptoken + ptoken_expires_at, otp + otp_created_at + otp_attempts,
-  device_token, deleted_at, created/updated_at tz-aware
+  device_token, refresh_jti (String(32), nullable, regenerated on each refresh — required by `Auth.generate_tokens` in `patterns.md §7`),
+  deleted_at, created/updated_at tz-aware
 
 ### 6. API + service + validation + DTO for auth
 - AccountController + AccountService + (Login/SignupValidation, ResetPasswordValidation, OTPValidation) + AccountSchema

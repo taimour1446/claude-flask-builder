@@ -54,7 +54,10 @@ Every rule BLOCKING unless marked `[ADVISORY]`.
   repository-style method takes `self` or a row-instance method is decorated
   `@staticmethod` despite reading `self.*`.
 - **R44** `default=callable` for runtime defaults (NOT `default=Helper.generatePin()` which evaluates at class-load time).
-- **R45** Money columns `Numeric(10,2)`.
+- **R45** Money columns `Numeric(10,2)`. (Reviewer enforces this via **R19**
+  — the two rules are deliberately redundant: R19 forbids Float, R45 asserts
+  Numeric. Reviewer fires R19 on any `Column(Float` for a money-shaped name;
+  no separate R45 check needed.)
 - **R46** Timestamps tz-aware (`DateTime(timezone=True)`).
 - **R47** Soft-delete pattern: explicit `deleted_at` column, NOT string-mangling on email/phone.
 - **R48** Bulk `.update(... synchronize_session=False)` is followed by `db.session.expire_all()` or refetch.

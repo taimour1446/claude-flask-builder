@@ -247,6 +247,7 @@ Wraps every request: assigns request_id, logs redacted body, attaches header.
 import logging
 import secrets
 from flask import Flask, g, request
+from werkzeug.exceptions import BadRequest
 
 logger = logging.getLogger(__name__)
 
@@ -261,8 +262,15 @@ _REDACT_FIELDS: frozenset[str] = frozenset({
 
 
 def _redact(payload: dict | list | None) -> dict | list | None:
+    """Recursive case-insensitive redaction. Replaces matched values with ***."""
     if isinstance(payload, dict):
-        return {k: ("***" if k in _REDACT_FIELDS else _redact(v)) for k, v in payload.items()}
+        # WHY .lower(): redaction key list is canonical lowercase; payloads
+        # may arrive with mixed case from third-party callers. We never want
+        # a Stripe_Secret_Key or PASSWORD slip through (R67).
+        return {
+            k: ("***" if k.lower() in _REDACT_FIELDS else _redact(v))
+            for k, v in payload.items()
+        }
     if isinstance(payload, list):
         return [_redact(v) for v in payload]
     return payload
@@ -277,9 +285,13 @@ class RequestInterceptor:
         def _before() -> None:
             # WHY url-safe 16 bytes: roughly UUID-strength but URL/header safe.
             g.request_id = request.headers.get("X-Request-ID") or secrets.token_urlsafe(16)
+            # WHY (TypeError, ValueError, BadRequest): the only exceptions
+            # `request.get_json(silent=True)` can raise pass through these.
+            # We must NOT let log preparation crash the request (R17 allows
+            # specific exceptions; this is NOT a bare except).
             try:
                 body = request.get_json(silent=True)
-            except Exception:  # noqa: BLE001 — we never let logging break the request
+            except (TypeError, ValueError, BadRequest):
                 body = None
             logger.info("request_in", extra={
                 "request_id": g.request_id, "method": request.method,
@@ -296,11 +308,6 @@ class RequestInterceptor:
             return response
 ```
 
-## 8. RequestInterceptor (R67, R91)
-- before_request: generate request_id, log redacted body
-- after_request: attach X-Request-ID header, update log status
-- Redact: password, ptoken, otp, card_number, cvc, stripe_secret
-
 ## 9. Service-direct cron jobs (P6-8)
 NO self-callback `requests.post(BASE_URL + ...)` pattern.
 Cron jobs in `scheduler_jobs/` call services directly:
@@ -310,4 +317,58 @@ def purge_pending_orders():
     with scheduler.app.app_context():
         with distributed_lock('purge_pending_orders'):
             OrderService.purge_pending(...)
+```
+
+### `distributed_lock` (utils/distributed_lock.py) — Postgres advisory lock
+```python
+"""distributed_lock — Postgres advisory-lock context manager.
+
+WHY advisory lock (not Redis): the app already has a Postgres connection;
+adding Redis is a new dependency outside the Locked Stack (R141). Postgres
+advisory locks are per-connection, automatically released on disconnect,
+and survive multi-pod deploys.
+"""
+import contextlib
+import hashlib
+import logging
+from typing import Iterator
+
+from app.configuration.Database import db
+
+logger = logging.getLogger(__name__)
+
+
+def _lock_id(name: str) -> int:
+    """Deterministic int64 id from the lock name (Postgres pg_try_advisory_lock arg)."""
+    h = hashlib.sha256(name.encode("utf-8")).digest()
+    # int64 range; signed two's-complement
+    val = int.from_bytes(h[:8], "big", signed=True)
+    return val
+
+
+@contextlib.contextmanager
+def distributed_lock(name: str) -> Iterator[bool]:
+    """Try-acquire a named advisory lock. Yields True if acquired, False if not.
+
+    Callers MUST check the yielded value when they care about exclusivity:
+        with distributed_lock('purge') as acquired:
+            if not acquired:
+                return  # another pod is doing it
+            ...
+
+    For cron jobs marked `max_instances=1` AND using this lock, double-run
+    is impossible even across pods.
+    """
+    lock_id = _lock_id(name)
+    acquired = bool(db.session.execute(
+        db.text("SELECT pg_try_advisory_lock(:k)"), {"k": lock_id}
+    ).scalar())
+    try:
+        yield acquired
+    finally:
+        if acquired:
+            db.session.execute(
+                db.text("SELECT pg_advisory_unlock(:k)"), {"k": lock_id}
+            )
+            db.session.commit()
 ```

@@ -42,11 +42,19 @@ pass. Capture logs, report structured pass/fail.
 - Capture: per-test pass/fail, coverage %. **R102** FAILs here if coverage < 60.
 
 ### 5a. R100 — endpoint test coverage (delegated by reviewer)
-- Enumerate registered routes: a short helper script
-  `python -c "from app.application import create_application; \
-  [print(f'{list(r.methods - {chr(72)+chr(69)+chr(65)+chr(68)})[0]} {r.rule}') \
-  for r in create_application().url_map.iter_rules() \
-  if r.endpoint != 'static']"`
+- Enumerate registered routes (excludes Flask-implicit HEAD + OPTIONS):
+  ```bash
+  pipenv run python -c "
+  from app.application import create_application
+  IMPLICIT = {'HEAD', 'OPTIONS'}
+  for r in create_application().url_map.iter_rules():
+      if r.endpoint == 'static':
+          continue
+      methods = sorted(r.methods - IMPLICIT)
+      for m in methods:
+          print(f'{m} {r.rule}')
+  "
+  ```
 - For each non-static route, grep `tests/` for at least one test that calls
   that path (e.g. `client.post('/api/v1/auth/login'`). If 0 hits — FAIL R100
   with the uncovered route list.

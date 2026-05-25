@@ -6,7 +6,7 @@ Ship at project root. NEVER commit a `.env` with real values (gitignored).
 # === Core ===
 ENV=dev                              # dev | staging | prod
 FLASK_APP=app.application:create_application
-SECRET_KEY=change-me-secrets-token_urlsafe-32
+SECRET_KEY=replace-with-output-of-python-c-import-secrets-print-secrets-token-urlsafe-32  # ≥32 raw bytes; Settings.validate() rejects shorter
 DATABASE_URI=postgresql+psycopg2://user:pass@localhost:5432/dbname?sslmode=require
 BASE_URL=https://api.example.com
 INTERNAL_BASE_URL=http://localhost:8000  # P6-2

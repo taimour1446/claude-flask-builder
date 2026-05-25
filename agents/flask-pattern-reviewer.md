@@ -48,6 +48,10 @@ SEMANTIC READ for rules that grep cannot reliably enforce.
 - `pipenv run black --check <changed>` — failures are FAIL.
 
 **Stage 2 — grep for forbidden patterns (cheap, reliable):**
+All Stage 2 patterns use Extended Regular Expressions: run as
+`grep -rEn <pattern> <path>` (or `rg -nE` if ripgrep available). Never
+fall back to BRE — alternation `|` and character classes `['"]` rely on ERE.
+
   - `print(` in src → FAIL **R18**
   - `random.randrange|random.choice` for security → FAIL **R20**
   - `model.__dict__.update` → FAIL **R61**
@@ -71,6 +75,14 @@ SEMANTIC READ for rules that grep cannot reliably enforce.
     a SIGTERM handler comment — missing → FAIL **R112**
   - Migration filename `versions/<rev>_<slug>.py` — slug must be ≥3 words
     or ≥20 chars; `<rev>_.py`/`<rev>_x.py` → FAIL **R50**
+  - `pickle\.loads\(` anywhere in src → FAIL **R21**
+  - `(TODO|FIXME|XXX|HACK)` in any delivered (non-test) src file → FAIL **R34**
+  - Literal-looking secret in src — match ANY of:
+    `sk_live_[A-Za-z0-9]+`, `pk_live_[A-Za-z0-9]+`, `sk_test_[A-Za-z0-9]+`,
+    `whsec_[A-Za-z0-9]+`, `xoxb-[0-9A-Za-z-]+` (Slack), `AKIA[0-9A-Z]{16}`
+    (AWS access key), `ghp_[A-Za-z0-9]{36}` (GitHub PAT), or any hex/base64
+    blob ≥40 chars assigned to a non-test variable → FAIL **security.md**
+    "literal-looking secret"
 
 **Stage 3 — SEMANTIC READ (grep alone insufficient — false positive / negative
 risk). For each of these, OPEN the file and reason about context:**
@@ -99,6 +111,21 @@ risk). For each of these, OPEN the file and reason about context:**
     Also flag `requests.Session()` use that omits a default timeout.
   - R46 (DateTime without timezone=True): grep `Column(DateTime` — READ each
     line; FAIL if `timezone=True` absent.
+  - R60 (JWT exp claim): READ `utils/Auth.py` (or wherever
+    `jwt.encode` appears). FAIL if any `jwt.encode(...)` call's payload
+    dict does NOT contain an `"exp"` key.
+  - R67 (RequestInterceptor uses redaction allowlist): READ
+    `utils/RequestInterceptor.py`. FAIL if neither a `_REDACT_FIELDS` set
+    nor an equivalent `_redact()` helper is invoked in `before_request`.
+  - R69 (Stripe return_url allowlist): READ any file importing `stripe.`
+    for code paths that pass `return_url=` to a Stripe call. FAIL if the
+    return_url is not validated against an env-sourced allowlist (e.g.
+    `settings.STRIPE_RETURN_URL_ALLOWLIST`) before the call.
+  - R83 (no hardcoded external URLs): READ any service/integration file
+    grep'd for `https?://[A-Za-z0-9.-]+` literals. FAIL only when the
+    literal is the destination of a `requests.*` call or a Stripe/Twilio
+    SDK URL override (allowlist: hardcoded test URLs in `tests/`,
+    docstrings, and example URLs in comments).
   - R74 (session cookie flags): READ `Configuration.py`; require ALL of
     `SESSION_COOKIE_SECURE`, `SESSION_COOKIE_HTTPONLY`,
     `SESSION_COOKIE_SAMESITE` set to truthy/non-default values. Missing any
