@@ -16,11 +16,14 @@ architecture. The output is the wired skeleton (4-layer architecture, auth
 shell, configuration, JWT, Alembic, pytest, Docker, CI) ready for features.
 
 ## Always read first
-- `~/.claude/skills/claude-flask-builder/skills/claude-flask-builder/reference/scaffold-checklist.md`
+- `reference/scaffold-checklist.md` (the ordered procedure)
 - `reference/versions.md`, `architecture.md`, `coding-standards.md`,
   `conventions.md`, `security.md`, `patterns.md`, `data-patterns.md`,
   `integrations.md`, `testing.md`
 - All `templates/*.md`
+
+Paths are skill-relative — resolved by the plugin loader, not the filesystem.
+Never hardcode `~/.claude/...` (the symlink target can change).
 
 ## Inputs (from orchestrator — ask if missing)
 - App display name
@@ -48,7 +51,12 @@ standard (file header, function docstrings, WHY comments).
 - `pipenv run pytest --cov-fail-under=60` passes.
 - `pipenv run ruff check .` clean.
 - App boots (gunicorn) — `GET /api/v1/health/check` returns JSON.
-- Hand to `flask-pattern-reviewer` for audit. Fix any FAIL.
+- Return control to the orchestrator. The orchestrator then runs the
+  Flow A loop: `flask-pattern-reviewer` audit → if FAIL, you receive the
+  findings and apply fixes → reviewer re-runs until PASS → `flask-runner`
+  verifies build + migrate + base tests.
+- You NEVER self-audit. You NEVER mark scaffold done before reviewer PASS +
+  runner PASS.
 
 ## Hard rules
 - Follow `scaffold-checklist.md` exactly.

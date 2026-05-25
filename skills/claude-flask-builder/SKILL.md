@@ -70,7 +70,12 @@ code task.
 `templates/controller.py.md`, `service.py.md`, `validation-schema.py.md`,
 `dto-schema.py.md`, `model.py.md`, `migration.py.md`, `pytest-endpoint.py.md`,
 `seeder.py.md`, `webhook.py.md`, `cron-job.py.md`, `app-factory.py.md`,
-`env-example.md`.
+`integration-client.py.md`, `env-example.md`.
+
+`integration-client.py.md` is the mandatory shape for any new external-API
+wrapper in `app/integrations/` — it embodies R17/R18/R20/R80/R82/R83/R84/R85
+(and R81/R69 for Stripe). Reviewer FAILs any `requests.*` call that lives
+outside an integration client file unless explicitly justified.
 
 **Foundation utils** referenced in `scaffold-checklist.md` step 3 (Settings,
 Logging, BaseResponse, Auth, Validation, RequestInterceptor, Helper,

@@ -46,7 +46,13 @@ Every rule BLOCKING unless marked `[ADVISORY]`.
 - **R40** Every column used in WHERE has an index in the migration that adds it.
 - **R41** Composite UNIQUE constraint on every "must not duplicate" pair (e.g. `(order_id, driver_id)` on OrderRequest, `(user_id, slot_id, date)` on DriverSlot, `(key)` on Fare).
 - **R42** Every text() uses bind params (`:name`) — NO `.format`/`f-string`/`%`.
-- **R43** Every model method = `@staticmethod`. NO exceptions.
+- **R43** **Repository-style methods on models** (`find`, `find_by_*`,
+  `create`, `list`, `delete_by_id`, anything that operates on the table or
+  constructs new rows) MUST be `@staticmethod`. Pure **row-instance methods**
+  (`to_dict(self)`, `soft_delete(self)`, `is_owner(self, user_id)`) are
+  bound methods and MUST take `self`. Reviewer FAILs only when a
+  repository-style method takes `self` or a row-instance method is decorated
+  `@staticmethod` despite reading `self.*`.
 - **R44** `default=callable` for runtime defaults (NOT `default=Helper.generatePin()` which evaluates at class-load time).
 - **R45** Money columns `Numeric(10,2)`.
 - **R46** Timestamps tz-aware (`DateTime(timezone=True)`).

@@ -2,8 +2,9 @@
 name: flask-runner
 description: >-
   Build, migrate, and test Flask apps from the claude-flask-builder
-  architecture. Runs pipenv install → DB up → alembic upgrade → pytest with
-  coverage → ruff/black checks. Captures logs, reports pass/fail per step.
+  architecture. Runs pipenv install → DB up → flask db upgrade (Alembic via
+  Flask-Migrate) → pytest with coverage → ruff/black checks → coverage gate +
+  pytest-per-endpoint check. Captures logs, reports pass/fail per step.
 tools: Read, Write, Edit, Bash, Grep, Glob
 model: sonnet
 ---
