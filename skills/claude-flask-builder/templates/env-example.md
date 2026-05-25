@@ -23,9 +23,10 @@ MAIL_PASSWORD=
 MAIL_DEFAULT_SENDER=noreply@example.com
 
 # === Stripe (if enabled) ===
-STRIPE_SECRET=
-STRIPE_PUBLIC_KEY=
-STRIPE_WEBHOOK_SECRET=
+STRIPE_SECRET_KEY=                                  # sk_live_... or sk_test_...
+STRIPE_PUBLISHABLE_KEY=                             # pk_live_... or pk_test_...
+STRIPE_WEBHOOK_SECRET=                              # whsec_...
+STRIPE_RETURN_URL_ALLOWLIST=https://app.example.com/payment/return,https://app.example.com/payment/cancel
 PLATFORM_ACCOUNT_ID=
 
 # === Twilio (if enabled) ===

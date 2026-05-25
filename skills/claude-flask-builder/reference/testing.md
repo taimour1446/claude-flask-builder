@@ -22,17 +22,49 @@ api/app/tests/
 - `mock_google_maps` — responses lib URL match
 - `mail_outbox` — Flask-Mail.record_messages context
 
-## 10 must-cover endpoints
+## Must-cover endpoints
+
+**At scaffold time**, only two endpoints exist and BOTH must have tests:
 1. POST /api/v1/auth/login
-2. POST /api/v1/order (createOrder — 10-step flow)
-3. POST /api/v1/order/estimate
-4. POST /api/v1/order/payment/completed
-5. GET /api/v1/order/<id>
-6. POST /api/v1/order/cancel
-7. POST /api/v1/account (createAccount with role validation)
-8. POST /api/v1/payout/creator
-9. GET /api/v1/health/check
-10. POST /api/v1/file (upload + MIME+size validation)
+2. GET  /api/v1/health/check
+
+**Reference set** (examples from a mature project — present as feature work
+adds them; reviewer/runner FAILs the corresponding R100 check when an
+existing endpoint has no test):
+- POST /api/v1/order (createOrder — multi-step flow)
+- POST /api/v1/order/estimate
+- POST /api/v1/order/payment/completed
+- GET  /api/v1/order/<id>
+- POST /api/v1/order/cancel
+- POST /api/v1/account (createAccount with role validation)
+- POST /api/v1/payout/creator
+- POST /api/v1/file (upload + MIME+size validation)
+
+The runner (Stage 5a) enumerates `app.url_map` at audit time and requires
+at least one matching test for every non-static, non-debug route.
+
+## pyproject.toml — pytest config block (scaffolder writes this)
+```toml
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["app/tests"]
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+    "--cov=app",
+    "--cov-report=term-missing",
+    "--cov-fail-under=60",
+]
+filterwarnings = [
+    "error",
+    "ignore::DeprecationWarning:flask_seeder.*",
+]
+markers = [
+    "e2e: full request → DB → response",
+    "integration: endpoint with mocked externals",
+]
+```
 
 ## Mocking strategy
 - `unittest.mock.patch` for Python-level

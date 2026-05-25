@@ -1,7 +1,7 @@
 # External API Integrations
 
 ## Stripe
-- `stripe.api_key = settings.STRIPE_SECRET` at module load via Settings, not os.getenv per call
+- `stripe.api_key = settings.STRIPE_SECRET_KEY` at module load via Settings, not os.getenv per call (canonical name matches Stripe's `sk_*` key convention; `STRIPE_PUBLISHABLE_KEY` for the `pk_*` key)
 - ALWAYS pass `idempotency_key=` on mutations (PaymentIntent.create, Refund.create, Transfer.create)
 - Amounts: `math.ceil(Decimal(amount) * 100)` (cents, never Float)
 - Webhook handler: `stripe.Webhook.construct_event(payload, sig_header, settings.STRIPE_WEBHOOK_SECRET)`

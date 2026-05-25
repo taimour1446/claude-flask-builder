@@ -39,7 +39,25 @@ pass. Capture logs, report structured pass/fail.
 
 ### 5. Tests
 - `pipenv run pytest -v --cov=app --cov-report=term-missing --cov-fail-under=60`
-- Capture: per-test pass/fail, coverage %.
+- Capture: per-test pass/fail, coverage %. **R102** FAILs here if coverage < 60.
+
+### 5a. R100 — endpoint test coverage (delegated by reviewer)
+- Enumerate registered routes: a short helper script
+  `python -c "from app.application import create_application; \
+  [print(f'{list(r.methods - {chr(72)+chr(69)+chr(65)+chr(68)})[0]} {r.rule}') \
+  for r in create_application().url_map.iter_rules() \
+  if r.endpoint != 'static']"`
+- For each non-static route, grep `tests/` for at least one test that calls
+  that path (e.g. `client.post('/api/v1/auth/login'`). If 0 hits — FAIL R100
+  with the uncovered route list.
+- Health, static, and Flask-debug routes are exempt.
+
+### 5b. R101 — validation error-message coverage (delegated by reviewer)
+- Enumerate Validation classes:
+  `grep -rE "^class \w+Validation\(Schema\):" app/domain/validation/ | awk -F: '{print $1":"$2}'`
+- For each class, grep `tests/` for either: an explicit
+  `assert ...message...` referencing that class name OR a test file path
+  containing the class name. If 0 hits — FAIL R101 with the uncovered list.
 
 ### 6. Smoke run
 - Start `pipenv run gunicorn -b 127.0.0.1:8000 app.application:create_application()` in background.

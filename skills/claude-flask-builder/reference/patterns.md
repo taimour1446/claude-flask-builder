@@ -7,6 +7,48 @@ Every JSON response: `{status, data, error, authError, force_update, message, re
 - `request_id` populated by RequestInterceptor's X-Request-ID
 - `trace` field ONLY in dev — never in production response
 
+### Full implementation skeleton (utils/BaseResponse.py)
+```python
+"""BaseResponse — the locked JSON envelope. NEVER change shape; clients depend on it."""
+from typing import Any
+from flask import jsonify, g, current_app
+
+
+class BaseResponse:
+    """Two static constructors. Both return a Flask Response."""
+
+    @staticmethod
+    def respond(data: Any = None, message: str = "") -> tuple:
+        """Success envelope. status=200, error=0."""
+        return jsonify({
+            "status": 200,
+            "error": 0,
+            "authError": 0,
+            "force_update": 0,
+            "message": message,
+            "data": data,
+            "request_id": getattr(g, "request_id", None),
+        }), 200
+
+    @staticmethod
+    def respondError(message: str = "Internal error", auth_error: int = 0,
+                     force_update: int = 0, trace: str | None = None) -> tuple:
+        """Error envelope. status=200 (client expects 200; reads `error`+`message`)."""
+        body = {
+            "status": 200,
+            "error": 1,
+            "authError": auth_error,
+            "force_update": force_update,
+            "message": message,
+            "data": None,
+            "request_id": getattr(g, "request_id", None),
+        }
+        # R68: trace ONLY in dev — production returns ticket id only.
+        if trace and current_app.config.get("ENV") != "production":
+            body["trace"] = trace
+        return jsonify(body), 200
+```
+
 ## 2. Controller skeleton (R23)
 ```python
 @blueprint.route('/path', methods=['POST'])
@@ -98,6 +140,161 @@ class X(db.Model):
 - Auth.generate_token(user) returns access + refresh tokens
 - Access TTL 30 min, refresh 30 days, rotation on use
 - token_required decorator validates exp, loads user, injects current_user
+
+### Full implementation skeleton (utils/Auth.py)
+```python
+"""Auth — JWT generate, decode, token_required + role_required decorators."""
+import datetime as dt
+import logging
+from functools import wraps
+from typing import Callable
+
+import jwt
+from flask import request
+
+from app.utils.BaseResponse import BaseResponse
+from app.utils.Settings import settings
+from app.model.User import User
+
+logger = logging.getLogger(__name__)
+
+
+class Auth:
+    @staticmethod
+    def generate_tokens(user: User) -> dict:
+        """Issue access + refresh. Both include `exp` (R60)."""
+        now = dt.datetime.now(dt.timezone.utc)
+        access = jwt.encode(
+            {"sub": user.id, "type": "access",
+             "exp": now + dt.timedelta(minutes=settings.JWT_ACCESS_TTL_MINUTES)},
+            settings.SECRET_KEY, algorithm="HS256",
+        )
+        refresh = jwt.encode(
+            {"sub": user.id, "type": "refresh",
+             "exp": now + dt.timedelta(days=settings.JWT_REFRESH_TTL_DAYS),
+             "jti": user.refresh_jti},  # rotation: rotate jti on each refresh
+            settings.SECRET_KEY, algorithm="HS256",
+        )
+        return {"access": access, "refresh": refresh}
+
+    @staticmethod
+    def assert_role(current_user: User, allowed: list[str]) -> None:
+        """Service-layer role gate (R72)."""
+        if current_user.role not in allowed:
+            raise PermissionError("role not authorized")
+
+
+def token_required(fn: Callable) -> Callable:
+    """Decorator: validates access token, loads user, injects current_user."""
+    @wraps(fn)
+    def wrapper(*args, **kwargs):
+        token = request.headers.get("Authorization", "").removeprefix("Bearer ").strip()
+        if not token:
+            return BaseResponse.respondError(message="Missing token", auth_error=1)
+        try:
+            payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+        except jwt.ExpiredSignatureError:
+            return BaseResponse.respondError(message="Token expired", auth_error=1)
+        except jwt.InvalidTokenError:
+            return BaseResponse.respondError(message="Invalid token", auth_error=1)
+        if payload.get("type") != "access":
+            return BaseResponse.respondError(message="Wrong token type", auth_error=1)
+        user = User.get_by_id(payload["sub"])
+        if user is None:
+            return BaseResponse.respondError(message="User not found", auth_error=1)
+        return fn(*args, current_user=user, **kwargs)
+    return wrapper
+```
+
+## 10. Validation.validate (utils/Validation.py)
+Universal request-validator. Services call ONLY this — never `Schema().load(...)` directly.
+
+```python
+"""Validation — single entry point. Raises CustomValidationException on failure."""
+from flask import Request
+from marshmallow import Schema, ValidationError
+
+
+class CustomValidationException(Exception):
+    """Validation/uniqueness failures. Controllers translate to BaseResponse.respondError."""
+
+
+class Validation:
+    @staticmethod
+    def validate(req: Request, schema: Schema) -> dict:
+        """Load + validate JSON body. Returns the cleaned dict.
+
+        :raises CustomValidationException: any Marshmallow error, first-message-wins.
+        """
+        try:
+            return schema.load(req.get_json(silent=True) or {})
+        except ValidationError as exc:
+            # WHY first message: the BaseResponse envelope carries a single
+            # human-readable string. The validation schema's `error_messages`
+            # is the source of truth for wording (R28).
+            first_field = next(iter(exc.messages))
+            first_msg = exc.messages[first_field]
+            if isinstance(first_msg, list):
+                first_msg = first_msg[0]
+            raise CustomValidationException(first_msg) from exc
+```
+
+## 11. RequestInterceptor (utils/RequestInterceptor.py)
+Wraps every request: assigns request_id, logs redacted body, attaches header.
+
+```python
+"""RequestInterceptor — X-Request-ID + redacted-body logging (R67, R91)."""
+import logging
+import secrets
+from flask import Flask, g, request
+
+logger = logging.getLogger(__name__)
+
+# WHY allowlist: drift-resistant — adding a new field elsewhere never leaks
+# secrets through logs by default (R67).
+_REDACT_FIELDS: frozenset[str] = frozenset({
+    "password", "new_password", "current_password",
+    "ptoken", "otp", "token", "refresh_token",
+    "card_number", "cvc", "cvv",
+    "stripe_secret", "stripe_secret_key", "api_key", "secret_key",
+})
+
+
+def _redact(payload: dict | list | None) -> dict | list | None:
+    if isinstance(payload, dict):
+        return {k: ("***" if k in _REDACT_FIELDS else _redact(v)) for k, v in payload.items()}
+    if isinstance(payload, list):
+        return [_redact(v) for v in payload]
+    return payload
+
+
+class RequestInterceptor:
+    @staticmethod
+    def intercept(app: Flask) -> None:
+        """Register before/after hooks."""
+
+        @app.before_request
+        def _before() -> None:
+            # WHY url-safe 16 bytes: roughly UUID-strength but URL/header safe.
+            g.request_id = request.headers.get("X-Request-ID") or secrets.token_urlsafe(16)
+            try:
+                body = request.get_json(silent=True)
+            except Exception:  # noqa: BLE001 — we never let logging break the request
+                body = None
+            logger.info("request_in", extra={
+                "request_id": g.request_id, "method": request.method,
+                "path": request.path, "body": _redact(body),
+            })
+
+        @app.after_request
+        def _after(response):
+            response.headers["X-Request-ID"] = getattr(g, "request_id", "")
+            logger.info("request_out", extra={
+                "request_id": getattr(g, "request_id", None),
+                "status": response.status_code,
+            })
+            return response
+```
 
 ## 8. RequestInterceptor (R67, R91)
 - before_request: generate request_id, log redacted body

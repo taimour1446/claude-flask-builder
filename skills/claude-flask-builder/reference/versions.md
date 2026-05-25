@@ -23,6 +23,7 @@
 | google-cloud-storage | latest | |
 | pytest, pytest-flask, pytest-cov | latest | |
 | ruff, black, isort | latest | |
+| urllib3 | >=1.26, <3 | vendored by requests; `Retry(allowed_methods=...)` API used in `templates/integration-client.py.md`. <1.26 used `method_whitelist=` — incompatible |
 | python-json-logger | latest | structured logs |
 | sentry-sdk[flask] | latest | optional |
 | pip-audit | latest | CI dep scan |

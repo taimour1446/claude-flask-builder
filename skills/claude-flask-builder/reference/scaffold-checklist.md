@@ -18,15 +18,36 @@
 Create all dirs + empty __init__.py files.
 
 ### 3. Foundations
-- utils/Settings.py — validated env config (FAIL FAST on missing required)
-- utils/Logging.py — structured logger config
-- utils/BaseResponse.py — envelope + redaction-aware
-- utils/Auth.py — JWT generate + token_required + role_required + refresh_token
-- utils/RequestInterceptor.py — X-Request-ID + redaction
-- utils/Validation.py — universal validate w/ unknown=EXCLUDE
-- utils/Helper.py — pagination, secrets-based generators
-- utils/TimezoneHelper.py — pytz/zoneinfo wrappers
-- utils/Constants.py — all enums + error message classes
+Each file below has a **full skeleton in `reference/patterns.md` sections
+1, 7, 8, 10, 11**. Scaffolder synthesizes from those skeletons; do NOT
+invent. Cross-references after each line point to the authoritative section.
+
+- **utils/Settings.py** — validated env config (FAIL FAST on missing required).
+  Class with class-level `os.environ`-driven attrs; `Settings.validate()`
+  raises on first missing required at startup. Shape: read env in
+  `__init_subclass__`-like pattern OR a `@classmethod validate(cls)` called
+  from `Configuration.configure_settings(app)`. (See `security.md` "What the
+  scaffolder writes by default — Settings".)
+- **utils/Logging.py** — `configure_logging()` installs JSON formatter from
+  `python-json-logger` when `ENV in {staging, production}`; plain stdlib
+  formatter in dev. Root level driven by `LOG_LEVEL` env.
+- **utils/BaseResponse.py** — see `patterns.md §1` (FULL SKELETON).
+- **utils/Auth.py** — see `patterns.md §7` (FULL SKELETON: `generate_tokens`,
+  `assert_role`, `token_required` decorator).
+- **utils/RequestInterceptor.py** — see `patterns.md §11` (FULL SKELETON
+  with redaction allowlist).
+- **utils/Validation.py** — see `patterns.md §10` (FULL SKELETON with
+  `CustomValidationException`).
+- **utils/Helper.py** — at minimum: `pagination(schema, data, query)`
+  (returns `{pagination: {...}, list: [...]}`), `generate_otp()` using
+  `secrets.randbelow`, `generate_ptoken()` using `secrets.token_urlsafe(32)`,
+  `merge_dict(base, override)`. NEVER `random.*` for any of these (R20).
+- **utils/TimezoneHelper.py** — `to_utc(naive, tz_name)`, `from_utc(aware,
+  tz_name)` via `zoneinfo.ZoneInfo` (stdlib, no pytz dep).
+- **utils/Constants.py** — every enum + error-message class. Use stdlib
+  `enum.Enum` for value enums; plain `class NameTaken: message = "..."` for
+  error-message catalogs (the values get passed to
+  `CustomValidationException`).
 
 ### 4. Configuration
 - configuration/Database.py, Mail.py, Scheduler.py (correct spelling)

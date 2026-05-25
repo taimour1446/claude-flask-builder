@@ -11,7 +11,7 @@ from app.configuration.Database import db
 
 
 class <Name>Seeder(Seeder):
-    def run(self):
+    def run(self) -> None:
         # Env-driven values (R-seed: NEVER hardcode credentials)
         items = [
             {'name': os.environ.get('SEED_<NAME>_FIRST', 'default-1')},

@@ -25,9 +25,14 @@ from typing import Any
 
 import requests
 from requests.adapters import HTTPAdapter
-from urllib3.util.retry import Retry
+from urllib3.util.retry import Retry  # urllib3 >= 1.26 — uses `allowed_methods`
 
 from app.utils.Settings import settings
+
+# WHY pinned: urllib3 < 1.26 used `method_whitelist=`; >=1.26 uses
+# `allowed_methods=`. We require 1.26+ (see `reference/versions.md`).
+# If you hit `TypeError: unexpected keyword argument 'allowed_methods'`,
+# upgrade urllib3 — do NOT downgrade to `method_whitelist`.
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +99,7 @@ class <Provider>Client:
 
     # WHY classvar from Settings: no hardcoded URLs (R83).
     _BASE_URL: str = settings.<PROVIDER>_BASE_URL
-    _API_KEY: str = settings.<PROVIDER>_API_KEY
+    _API_KEY: str = settings.<PROVIDER>_API_KEY  # e.g. STRIPE_SECRET_KEY / TWILIO_AUTH_TOKEN / TOLLGURU_API_KEY
 
     @staticmethod
     def fetch_resource(resource_id: str) -> dict[str, Any]:
@@ -173,7 +178,7 @@ when the call produces a `return_url`):
 import stripe
 from app.utils.Settings import settings
 
-stripe.api_key = settings.STRIPE_API_KEY
+stripe.api_key = settings.STRIPE_SECRET_KEY  # canonical — matches Stripe sk_*
 
 
 def create_payment_intent(amount_cents: int, currency: str, customer_id: str,

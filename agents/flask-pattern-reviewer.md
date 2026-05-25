@@ -42,16 +42,35 @@ SEMANTIC READ for rules that grep cannot reliably enforce.
 
 **Stage 1 — automated checks:**
 - `pipenv run ruff check <changed>` — failures are FAIL.
+  Required ruleset includes at minimum: `E,F,I,B,N,UP,ANN,S` (errors, flakes,
+  isort imports → **R03**, bugbear, pep8-naming → assists **R10–R16**, pyupgrade,
+  flake8-annotations → assists **R05**, flake8-bandit → assists R20–R22).
 - `pipenv run black --check <changed>` — failures are FAIL.
 
 **Stage 2 — grep for forbidden patterns (cheap, reliable):**
-  - `print(` in src → FAIL R18
-  - `random.randrange|random.choice` for security → FAIL R20
-  - `model.__dict__.update` → FAIL R61
-  - `unknown=INCLUDE` on request schemas → FAIL R62
-  - `except:` (bare) → FAIL R17
-  - `traceback.format_exc()` in respondError → FAIL R68
-  - `flask run` in Dockerfile/entrypoint → FAIL R111
+  - `print(` in src → FAIL **R18**
+  - `random.randrange|random.choice` for security → FAIL **R20**
+  - `model.__dict__.update` → FAIL **R61**
+  - `unknown=INCLUDE` on request schemas → FAIL **R62**
+  - `except:` (bare) → FAIL **R17**
+  - `traceback.format_exc()` in respondError → FAIL **R68**
+  - `flask run` in Dockerfile/entrypoint → FAIL **R111**
+  - `shell=True` anywhere in src → FAIL **R22**
+  - `default=Helper\.|default=secrets\.|default=uuid\.uuid4\(\)` (note the
+    trailing `()` — passing the *result* of a callable at class-load time
+    instead of the callable itself) → FAIL **R44**
+  - `ACL=['"]public-read['"]` in src → FAIL **R71**
+  - `|safe` inside any `templates/**/*.html` → FAIL **R73**
+  - `origins=['"]\*['"]` combined with `supports_credentials=True` in
+    Configuration.py → FAIL **R64**
+  - In any `app/api/*Webhook*.py` file: REQUIRE
+    `stripe.Webhook.construct_event` to appear → FAIL **R70** if missing
+  - In Dockerfile: REQUIRE `USER ` (non-root), `HEALTHCHECK`, and `FROM ...
+    AS builder` (multi-stage). Missing any → FAIL **R110**
+  - In `gunicorn.conf.py` or entrypoint: REQUIRE `graceful_timeout` set OR
+    a SIGTERM handler comment — missing → FAIL **R112**
+  - Migration filename `versions/<rev>_<slug>.py` — slug must be ≥3 words
+    or ≥20 chars; `<rev>_.py`/`<rev>_x.py` → FAIL **R50**
 
 **Stage 3 — SEMANTIC READ (grep alone insufficient — false positive / negative
 risk). For each of these, OPEN the file and reason about context:**
@@ -78,6 +97,12 @@ risk). For each of these, OPEN the file and reason about context:**
   - R80 (timeout= on requests.*): grep `requests\.\(get\|post\|put\|delete\|patch\|request\)\(`
     for candidates; READ each call's argument list — FAIL if `timeout=` is absent.
     Also flag `requests.Session()` use that omits a default timeout.
+  - R46 (DateTime without timezone=True): grep `Column(DateTime` — READ each
+    line; FAIL if `timezone=True` absent.
+  - R74 (session cookie flags): READ `Configuration.py`; require ALL of
+    `SESSION_COOKIE_SECURE`, `SESSION_COOKIE_HTTPONLY`,
+    `SESSION_COOKIE_SAMESITE` set to truthy/non-default values. Missing any
+    → FAIL R74.
   - R81 (Stripe mutation without idempotency_key): grep `stripe\.\(PaymentIntent\|Refund\|Transfer\|Charge\|Customer\|Subscription\|Invoice\)\.create\b`
     for candidates; READ the argument list — FAIL if `idempotency_key=` absent.
 
@@ -90,6 +115,24 @@ Do NOT FAIL on a grep hit alone — confirm by reading the file.
 - **R101** (every new Validation class has an error-message test) — runner
   cross-references `domain/validation/` classes with test references.
 - **R102** (coverage ≥60%) — runner runs `pytest --cov-fail-under=60`.
+
+**PRE-CHECK-only enforcement (the reviewer audits these on the PLAN, not
+on the code — they require holistic judgment grep cannot deliver):**
+- **R10–R16** (naming) — checked at PRE-CHECK against the proposed file
+  list + class names. At POST-CHECK, ruff `N` ruleset (Stage 1) catches the
+  bulk; the reviewer does NOT re-FAIL on grep alone.
+- **R23–R28** (layer boundaries) — checked at PRE-CHECK against the
+  proposed snippets. At POST-CHECK, reviewer SPOT-CHECKS by reading the
+  controllers + services touched: controller has zero business logic,
+  service has zero Flask request parsing, `@post_dump` never queries DB.
+  Flagged as FAIL when seen, but not exhaustively swept.
+- **R30–R34** (commenting) — checked at PRE-CHECK; at POST-CHECK reviewer
+  spot-reads new files for missing file headers / missing docstrings on
+  the public surface. Bulk-comment coverage is not measured.
+- **R140/R141/R142** (scope discipline) — checked at PRE-CHECK against the
+  diff size + touched-files list. At POST-CHECK, reviewer FAILs only on
+  obviously off-scope edits (unrelated refactors, files outside the
+  architecture).
 
 **Best-effort grep (limited; reviewer flags as ADVISORY, does NOT FAIL):**
 - **R05** (type hints on every public function) — ruff with `--select ANN`

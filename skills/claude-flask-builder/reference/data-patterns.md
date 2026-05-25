@@ -38,6 +38,38 @@ Required at scaffold time:
 - Fare: UNIQUE(key)
 - User: UNIQUE(email), UNIQUE(phone)
 
+### Migration syntax (R41)
+```python
+from alembic import op
+import sqlalchemy as sa
+
+def upgrade() -> None:
+    op.create_table(
+        "order_requests",
+        sa.Column("id", sa.Integer, primary_key=True),
+        sa.Column("order_id", sa.Integer, sa.ForeignKey("orders.id"), nullable=False),
+        sa.Column("driver_id", sa.Integer, sa.ForeignKey("users.id"), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True),
+                  server_default=sa.func.now(), nullable=False),
+        sa.UniqueConstraint("order_id", "driver_id", name="uq_order_request_order_driver"),
+        sa.Index("ix_order_request_driver", "driver_id"),
+    )
+
+def downgrade() -> None:
+    op.drop_table("order_requests")  # R49 — real body, never `pass`
+```
+
+If a new model legitimately has NO duplicate-prevention pair, document it in
+the migration's docstring:
+```python
+"""add foo_audit_log table.
+
+No composite UNIQUE: append-only log; duplicates are valid (R41 waived).
+"""
+```
+The reviewer's R41 check passes if EITHER a UniqueConstraint exists OR the
+docstring explains why none applies.
+
 ## Idempotency
 - DB-level UNIQUE + catch IntegrityError → return existing
 - Stripe mutations: `idempotency_key=` always (R81)

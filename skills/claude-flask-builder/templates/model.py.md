@@ -31,7 +31,7 @@ class <Name>(db.Model):
         return {c.name: getattr(self, c.name) for c in self.__table__.columns}
 
     @staticmethod
-    def create(data: dict, commit: bool = True):
+    def create(data: dict, commit: bool = True) -> "<Name>":
         """Create a row. Pass commit=False when called inside a service transaction."""
         # Explicit field assignment (R61) — no model.__dict__.update(data)
         obj = <Name>(
@@ -45,7 +45,7 @@ class <Name>(db.Model):
         return obj
 
     @staticmethod
-    def get_by_id(id: int):
+    def get_by_id(id: int) -> "<Name> | None":
         """Fetch an active (non-deleted) <Name> by id."""
         return db.session.query(<Name>).filter_by(id=id, deleted_at=None).first()
 

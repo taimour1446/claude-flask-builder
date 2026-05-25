@@ -28,7 +28,7 @@ class Create<Name>Validation(Schema):
     )
 
     @validates_schema
-    def custom(self, data, **kwargs):
+    def custom(self, data: dict, **kwargs) -> None:
         """Cross-field and uniqueness checks. Raise CustomValidationException."""
         if <Name>.exists_by_name(data['name']):
             raise CustomValidationException(Constants.NameTaken)
