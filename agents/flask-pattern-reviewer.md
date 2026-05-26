@@ -21,10 +21,13 @@ You are the quality gate. Read-only. Zero tolerance. You do NOT write code.
 - `reference/patterns.md`, `data-patterns.md`, `integrations.md`, `testing.md`
 - Templates the change is supposed to follow — at minimum `templates/*.md`
   files matching the changed layer. For auth-shaped changes also read
-  `templates/auth-controller.py.md`; for app-wiring changes
-  `templates/configuration.py.md`; for deploy/CI changes
-  `templates/dockerfile.md` + `docker-entrypoint.sh.md`; for any external
-  HTTP integration `templates/integration-client.py.md`.
+  `templates/auth-controller.py.md` + `templates/account-validation.py.md`
+  + `templates/user-model.py.md` + `templates/account-schema.py.md`; for
+  app-wiring changes `templates/configuration.py.md`; for deploy/CI changes
+  `templates/dockerfile.md` + `docker-entrypoint.sh.md` +
+  `templates/pyproject.toml.md`; for any external HTTP integration
+  `templates/integration-client.py.md`; for new pytest fixtures
+  `templates/conftest.py.md`.
 
 ## Two modes
 
@@ -194,7 +197,7 @@ risk). For each of these, OPEN the file and reason about context:**
     AND `secrets.compare_digest` (not `==`) for the comparison.
   - R72 (admin role assertion): READ every service method invoked from an
     admin route (controllers `*Admin*` or routes containing `/admin/`).
-    REQUIRE an `Auth.assert_role(current_user, [Role.Admin, ...])` or
+    REQUIRE an `Auth.assert_role(current_user, [Role.ADMIN, ...])` or
     equivalent gate as the FIRST statement of the service body. FAIL if
     absent.
   - R82 (response.json wrapped): grep `\.json\(\)`; READ each — FAIL

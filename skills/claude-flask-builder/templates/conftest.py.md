@@ -62,25 +62,50 @@ def app() -> Iterator[Flask]:
 
 @pytest.fixture(scope="function")
 def db_session(app: Flask) -> Iterator:
-    """Per-test SAVEPOINT rollback.
+    """Per-test SAVEPOINT rollback (SQLAlchemy 2.0 canonical pattern).
 
-    WHY nested SAVEPOINT: gives real transactional isolation without
-    truncating tables between tests. Every commit inside the test is
-    nested under this SAVEPOINT and reversed at teardown.
+    WHY this shape (not raw reassignment): `_db.session` is Flask-SQLAlchemy's
+    scoped_session proxy — reassigning the attribute does NOT redirect ORM
+    operations that go through the proxy. The correct pattern is:
+      1. open a connection + an outer transaction we never commit
+      2. start a SAVEPOINT (begin_nested) under it
+      3. configure `_db.session` to use this specific connection
+      4. listen for `after_transaction_end` to restart the SAVEPOINT every
+         time the test's code commits (otherwise the SAVEPOINT is gone and
+         later commits leak to the outer transaction)
+      5. on teardown roll back the outer transaction — discards ALL test
+         writes, including any that "committed" inside the test.
+
+    Reference: SQLAlchemy docs §"Joining a Session into an External Transaction".
     """
+    from sqlalchemy import event
+
     with app.app_context():
         connection = _db.engine.connect()
         transaction = connection.begin()
-        Session = sessionmaker(bind=connection)
-        session = Session()
-        _db.session = session  # type: ignore[assignment]
+
+        # Bind Flask-SQLAlchemy's scoped_session to THIS connection so
+        # `_db.session.add/commit/query` all flow through the same
+        # transactional scope.
+        _db.session.remove()
+        _db.session.configure(bind=connection, binds={})
 
         nested = connection.begin_nested()
+
+        @event.listens_for(_db.session, "after_transaction_end")
+        def _restart_savepoint(sess, trans):
+            nonlocal nested
+            # When the inner SAVEPOINT ends (test code committed), open
+            # the next one so subsequent writes in the test stay nested.
+            if trans.nested and not trans._parent.nested:
+                nested = connection.begin_nested()
+
         try:
-            yield session
+            yield _db.session
         finally:
-            nested.rollback()
-            session.close()
+            # Rollback the outer transaction — discards everything the
+            # test did, real-commits and all.
+            _db.session.remove()
             transaction.rollback()
             connection.close()
 

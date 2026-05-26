@@ -425,6 +425,25 @@ def _csv(name: str, default: str = "") -> list[str]:
     return [v.strip() for v in raw.split(",") if v.strip()]
 
 
+def _intenv(name: str, default: int) -> int:
+    """Parse an integer env var with a clear error message on bad input.
+
+    WHY a helper: `int(os.environ.get("X", "30"))` at class-body time
+    raises ValueError with a cryptic traceback (no env var name in the
+    message). This wrapper points to the offending env var so the
+    deploy log explains the misconfiguration immediately.
+    """
+    raw = os.environ.get(name)
+    if raw is None or raw == "":
+        return default
+    try:
+        return int(raw)
+    except ValueError as exc:
+        raise RuntimeError(
+            f"Env var {name}={raw!r} must be an integer"
+        ) from exc
+
+
 class _Settings:
     """All env values. Instantiated once at module load as `settings`."""
 
@@ -437,20 +456,20 @@ class _Settings:
     DATABASE_URI: ClassVar[str] = os.environ.get("DATABASE_URI", "")
 
     # JWT (R60)
-    JWT_ACCESS_TTL_MINUTES: ClassVar[int] = int(os.environ.get("JWT_ACCESS_TTL_MINUTES", "30"))
-    JWT_REFRESH_TTL_DAYS: ClassVar[int] = int(os.environ.get("JWT_REFRESH_TTL_DAYS", "30"))
+    JWT_ACCESS_TTL_MINUTES: ClassVar[int] = _intenv("JWT_ACCESS_TTL_MINUTES", 30)
+    JWT_REFRESH_TTL_DAYS: ClassVar[int] = _intenv("JWT_REFRESH_TTL_DAYS", 30)
 
     # CORS (R64) — env is comma-separated; transformed to list here
     CORS_ORIGINS: ClassVar[list[str]] = _csv("CORS_ORIGINS")
 
     # Upload cap (R63)
-    MAX_CONTENT_LENGTH_BYTES: ClassVar[int] = int(
-        os.environ.get("MAX_CONTENT_LENGTH_BYTES", str(8 * 1024 * 1024))  # 8 MiB
+    MAX_CONTENT_LENGTH_BYTES: ClassVar[int] = _intenv(
+        "MAX_CONTENT_LENGTH_BYTES", 8 * 1024 * 1024  # 8 MiB default
     )
 
     # Mail (set when mail toggle on)
     MAIL_SERVER: ClassVar[str] = os.environ.get("MAIL_SERVER", "")
-    MAIL_PORT: ClassVar[int] = int(os.environ.get("MAIL_PORT", "587"))
+    MAIL_PORT: ClassVar[int] = _intenv("MAIL_PORT", 587)
     MAIL_USERNAME: ClassVar[str] = os.environ.get("MAIL_USERNAME", "")
     MAIL_PASSWORD: ClassVar[str] = os.environ.get("MAIL_PASSWORD", "")
     MAIL_DEFAULT_SENDER: ClassVar[str] = os.environ.get("MAIL_DEFAULT_SENDER", "")
@@ -532,8 +551,10 @@ plain formatter in dev. Driven by `LOG_LEVEL` env.
 
 ```python
 """configure_logging — install root logger config. Called by Configuration."""
+import copy
 import logging
 import logging.config
+
 from flask import Flask
 
 
@@ -583,7 +604,6 @@ def configure_logging(app: Flask, env: str, level: str) -> None:
     # Mutating them directly would compound on repeat calls (tests, app
     # reloads, multi-app deploys in same process) and silently override
     # the original. Always copy before mutating.
-    import copy
     base = _LOG_CONFIG_PROD if env in {"staging", "production"} else _LOG_CONFIG_DEV
     config = copy.deepcopy(base)
     config["root"]["level"] = level.upper()
@@ -656,3 +676,57 @@ the bare string. No `__str__` override needed.
 **Naming convention**: `UPPER_SNAKE_CASE` per R15 (constants). Old
 `PascalCase` class-style identifiers (`Constants.InvalidOTP`) are NOT
 valid — they were a Round 7 experiment and were buggy.
+
+## 15. Documented known-gaps (project-side mitigations expected)
+
+These are real concerns intentionally NOT enforced by the skill itself —
+each requires per-project policy that varies by deploy target. The skill
+documents the canonical mitigation; the project implements it.
+
+### 15.1 Login timing-attack username enumeration
+The `LoginValidation` schema accepts any password length 1..72 and the
+controller raises a generic `Constants.INVALID_CREDENTIALS` on failure.
+But if the service short-circuits — `user = User.get_by_email(...)` →
+return error WITHOUT running bcrypt when `user is None` — an attacker can
+measure response time (≈1ms for no-user vs ≈100ms for bcrypt-checked) and
+enumerate registered emails. Canonical mitigation: always run a bcrypt
+compare against a dummy hash even when the user is not found:
+
+```python
+_DUMMY_HASH = bcrypt.hashpw(b"dummy", bcrypt.gensalt()).decode()
+
+@staticmethod
+def login(request) -> dict:
+    data = Validation.validate(request, LoginValidation())
+    user = User.get_by_email(data["email"])
+    if user is None:
+        # WHY: keep response time ~constant — defeats timing enumeration.
+        bcrypt.checkpw(data["password"].encode(), _DUMMY_HASH.encode())
+        raise CustomValidationException(Constants.INVALID_CREDENTIALS)
+    if not user.check_password(data["password"]):
+        raise CustomValidationException(Constants.INVALID_CREDENTIALS)
+    # ...
+```
+
+Reviewer does NOT auto-FAIL on the short-circuit pattern because some
+deploys put rate-limiting at the WAF and accept the timing channel as a
+known trade-off. Document the choice per project.
+
+### 15.2 `logger.extra` PII / credential leakage
+`patterns.md §13` configures a JSON formatter that emits every key in
+`logger.<level>(msg, extra={...})`. The `_redact` helper from §11 ONLY
+runs on the RequestInterceptor's body+args logging — **arbitrary
+`logger.info(..., extra=...)` calls bypass it**. If a developer writes
+`logger.info("stripe_call", extra={"api_key": settings.STRIPE_SECRET_KEY})`
+the key lands in plaintext logs.
+
+Canonical mitigation: project-side log-pipeline redaction (Fluentbit /
+Vector / Datadog log processors strip known secret prefixes
+`sk_live_`/`pk_live_`/etc. at ingest). The reviewer's Stage 2 grep for
+literal-secret patterns catches source-code commits but cannot detect
+runtime `extra` leakage.
+
+If you want skill-level protection, add a `logging.Filter` to the root
+logger that runs the `_redact` helper from §11 over every record's
+`extra` dict before formatting. The skill ships an example in
+`templates/logging-filter.py.md` (added when this gap is upgraded).

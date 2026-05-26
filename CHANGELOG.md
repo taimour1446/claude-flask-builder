@@ -1,5 +1,45 @@
 # Changelog
 
+## [1.0.9] — 2026-05-26
+
+Round-9 audit: SQLAlchemy session isolation fix + Settings int safety +
+ASCII-only digit regex + documented known-gaps for timing attacks +
+log-extra leakage.
+
+- **conftest.py.md `db_session`** rewritten with the SQLAlchemy 2.0
+  canonical pattern (`_db.session.configure(bind=connection)` +
+  `@event.listens_for(..., "after_transaction_end")` restarting SAVEPOINTs
+  on test commit). Previous version's `_db.session = session` reassignment
+  did NOT redirect the scoped_session proxy → silent test isolation breakage.
+- **patterns.md §12 Settings** gains `_intenv(name, default)` helper —
+  bare `int(os.environ.get(...))` crashed at class-body with a cryptic
+  ValueError when the env var was non-numeric. The helper raises
+  `RuntimeError(f"Env var {name}={raw!r} must be an integer")` so the
+  deploy log identifies the offender.
+- **account-validation.py.md** regexes use `[0-9]` instead of `\d` —
+  Python 3's `\d` accepts Unicode digits (Arabic-Indic, Devanagari).
+  Phone E.164 and 6-digit OTP MUST be ASCII.
+- **patterns.md §13 Logging**: `import copy` hoisted to module level.
+- **pyproject.toml.md**: stale `"app/utils/Constants.py" = ["N816"]`
+  per-file-ignore removed (Round 8 made Constants UPPER_SNAKE_CASE —
+  N816 doesn't apply).
+- **patterns.md NEW §15 Documented known-gaps**:
+  - 15.1 Login timing-attack username enumeration — canonical
+    dummy-bcrypt mitigation pattern documented; reviewer does NOT
+    auto-FAIL the short-circuit pattern (rate-limit at WAF is an
+    acceptable trade-off in many deploys).
+  - 15.2 `logger.extra` PII / credential leakage — primary mitigation
+    is log-pipeline (Vector/Datadog) redaction; skill-level option is
+    a `logging.Filter` running `_redact` over each record's `extra`.
+- **flask-pattern-reviewer**: `Role.Admin` → `Role.ADMIN` (one missed
+  leftover from Round 8). "Always read first" now matches templates to
+  the changed layer — auth → account-validation/user-model/account-schema;
+  deploy → pyproject.toml; tests → conftest.
+- **flask-feature-builder Step 2** now spells out (a) which Round-8
+  templates to follow per change kind, (b) Constants UPPER_SNAKE_CASE
+  contract, (c) Role.ADMIN (not Role.Admin), (d) blueprints register
+  through `Configuration.register_blueprints` (not `application.py`).
+
 ## [1.0.8] — 2026-05-26
 
 Round-8 audit: SHOWSTOPPER Constants fix + 3 NEW templates + Settings

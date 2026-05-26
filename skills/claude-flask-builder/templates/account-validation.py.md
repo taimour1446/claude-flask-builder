@@ -28,7 +28,10 @@ from app.utils.Validation import CustomValidationException
 # WHY centralized regex: phone canonicalization is the Validation layer's
 # job (R26). Anywhere a phone field is read, normalize it HERE so the
 # service receives an E.164 string.
-_E164_RE = re.compile(r"^\+[1-9]\d{7,14}$")
+# WHY [0-9] not \d: \d matches Unicode digits in Python 3 (Arabic-Indic,
+# Devanagari, etc.) — phone numbers MUST be ASCII per E.164. Restricting
+# to [0-9] avoids unicode-confusable bypasses.
+_E164_RE = re.compile(r"^\+[1-9][0-9]{7,14}$")
 
 
 def _normalize_email(value: str) -> str:
@@ -66,7 +69,9 @@ _password_field = fields.String(
 )
 _otp_field = fields.String(
     required=True,
-    validate=validate.Regexp(r"^\d{6}$", error="OTP must be exactly 6 digits"),
+    # ASCII-only digits — same reasoning as _E164_RE (avoid Unicode-digit
+    # confusables that would bypass numeric validation).
+    validate=validate.Regexp(r"^[0-9]{6}$", error="OTP must be exactly 6 digits"),
     error_messages={"required": "OTP is required"},
 )
 _ptoken_field = fields.String(

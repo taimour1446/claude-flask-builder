@@ -81,7 +81,18 @@ orchestrator returns PRE-CHECK = PASS from `flask-pattern-reviewer`.
 
 ### Step 2 — Write the code
 Implement the approved plan exactly. While writing:
-- Follow each `templates/*.md` skeleton.
+- Follow each `templates/*.md` skeleton. Specifically: auth validation
+  schemas follow `templates/account-validation.py.md` (centralized
+  normalize helpers + 12..72 password length + ASCII-only regex); new
+  pytest fixtures extend `templates/conftest.py.md` (do NOT redefine
+  `app`/`db_session`/`client`); new test markers go in
+  `templates/pyproject.toml.md` `[tool.pytest.ini_options].markers`.
+- `Constants.*` references use **UPPER_SNAKE_CASE module-level strings**
+  (`Constants.INVALID_TOKEN`, never `Constants.InvalidToken`). New
+  error messages get added to `patterns.md §14` and the project's
+  `utils/Constants.py`.
+- `Role.*` references use UPPER members (`Role.ADMIN`, `Role.CUSTOMER`),
+  never `Role.Admin`.
 - Apply ALL R-rules in `coding-standards.md` and `security.md`.
 - Use `secrets` not `random`, `Numeric` not `Float`, `logger` not `print`.
 - Explicit field assignment, never `model.__dict__.update`.
@@ -93,7 +104,8 @@ Implement the approved plan exactly. While writing:
 - Every Stripe mutation has `idempotency_key=`.
 - Add migration with working downgrade + indexes on filter columns.
 - Add pytest E2E for happy + validation-failure + auth paths.
-- Update relevant barrels, register blueprint in application.py if new.
+- Update relevant barrels, blueprint goes in
+  `Configuration.register_blueprints` (NOT `application.py` directly).
 - Run `pipenv run ruff check . && pipenv run pytest`.
 
 ### Step 3 — POST-CHECK

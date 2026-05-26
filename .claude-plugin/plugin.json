@@ -1,6 +1,6 @@
 {
   "name": "claude-flask-builder",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "Build and extend production-grade Flask REST APIs on a fixed 4-layer architecture (Controller / Service / Validation+DTO / Model). Ships one skill and four specialized agents with a double-gated review loop and automated build+migrate+test runner.",
   "author": {
     "name": "TAIMOUR KHAN"
