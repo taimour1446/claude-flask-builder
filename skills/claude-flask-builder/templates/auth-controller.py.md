@@ -161,10 +161,10 @@ class AccountService:
         data = Validation.validate(request, ResetPasswordValidation())
         user = User.get_by_ptoken(data["ptoken"])
         if user is None:
-            raise CustomValidationException(Constants.InvalidToken)
+            raise CustomValidationException(Constants.INVALID_TOKEN)
         now = dt.datetime.now(dt.timezone.utc)
         if user.ptoken_expires_at is None or user.ptoken_expires_at < now:
-            raise CustomValidationException(Constants.TokenExpired)
+            raise CustomValidationException(Constants.TOKEN_EXPIRED)
         user._password = bcrypt.hashpw(data["password"].encode(), bcrypt.gensalt()).decode()
         user.ptoken = None  # R65: single-use — invalidate immediately
         user.ptoken_expires_at = None
@@ -192,18 +192,18 @@ class AccountService:
         data = Validation.validate(request, VerifyOTPValidation())
         user = User.get_by_phone(data["phone"])
         if user is None or user.otp is None:
-            raise CustomValidationException(Constants.InvalidOTP)
+            raise CustomValidationException(Constants.INVALID_OTP)
         now = dt.datetime.now(dt.timezone.utc)
         # R66: TTL
         if (now - user.otp_created_at).total_seconds() > 300:
-            raise CustomValidationException(Constants.OTPExpired)
+            raise CustomValidationException(Constants.OTP_EXPIRED)
         # R66: max-attempts
         if user.otp_attempts >= 5:
-            raise CustomValidationException(Constants.TooManyOTPAttempts)
+            raise CustomValidationException(Constants.TOO_MANY_OTP_ATTEMPTS)
         if not secrets.compare_digest(user.otp, data["otp"]):
             user.otp_attempts += 1
             db.session.commit()
-            raise CustomValidationException(Constants.InvalidOTP)
+            raise CustomValidationException(Constants.INVALID_OTP)
         # Success: consume + rotate refresh jti
         user.otp = None
         user.otp_created_at = None

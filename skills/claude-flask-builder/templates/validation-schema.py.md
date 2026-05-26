@@ -31,7 +31,7 @@ class Create<Name>Validation(Schema):
     def custom(self, data: dict, **kwargs) -> None:
         """Cross-field and uniqueness checks. Raise CustomValidationException."""
         if <Name>.exists_by_name(data['name']):
-            raise CustomValidationException(Constants.NameTaken)
+            raise CustomValidationException(Constants.NAME_TAKEN)
 ```
 
 Checklist: `unknown = EXCLUDE` (R62), Decimal for money (R19), error_messages set (P4-12), @validates_schema raises CustomValidationException not ValidationError (R28).

@@ -1,5 +1,66 @@
 # Changelog
 
+## [1.0.8] — 2026-05-26
+
+Round-8 audit: SHOWSTOPPER Constants fix + 3 NEW templates + Settings
+hardening + 4 NEW reviewer checks.
+
+- **SHOWSTOPPER fixed**: `Constants` were classes with `__str__` instance
+  methods, but services raised `CustomValidationException(Constants.X)`
+  passing the CLASS — `str(exc)` returned `"<class '...InvalidOTP'>"`
+  instead of the message. **All auth error messages would have been
+  broken.** Rewrote §14 as module-level UPPER_SNAKE_CASE string constants
+  (`INVALID_TOKEN = "Invalid or expired token"`, etc.) — services raise
+  `CustomValidationException(Constants.INVALID_TOKEN)` and the exception's
+  default `__str__` returns the message string directly.
+- **NEW templates**:
+  - `templates/account-validation.py.md` — 6 auth-flow schemas (Signup/
+    Login/ForgotPassword/ResetPassword/SendOTP/VerifyOTP) with centralized
+    email lowercase + phone E.164 normalization, password length 12..72
+    (matches bcrypt), OTP `^\d{6}$`, ptoken Length(43), enum-resistant
+    signup uniqueness check.
+  - `templates/conftest.py.md` — every fixture from `testing.md`
+    implemented: app (session), db_session (SAVEPOINT rollback), client,
+    test_user + test_admin (secrets-generated passwords), mock_stripe /
+    mock_twilio / mock_fcm / mock_responses, mail_outbox. Critical:
+    `os.environ.setdefault` runs BEFORE `create_application` import so
+    `Settings.validate()` sees test env.
+  - `templates/pyproject.toml.md` — `[tool.ruff].lint.select` matches the
+    reviewer Stage 1 contract (E,F,I,B,N,UP,ANN,S,SIM,RUF), `[tool.black]`
+    line-length=100, `[tool.pytest.ini_options]` testpaths + --cov-fail-
+    under=60, `[tool.coverage.run] branch=true`.
+- **Settings hardening** (`patterns.md §12 validate()`):
+  - Rejects `"*"` in CORS_ORIGINS (env-driven R64 bypass closed).
+  - Bounds `JWT_ACCESS_TTL_MINUTES` to 1..60 (R60 implicit cap).
+  - Bounds `JWT_REFRESH_TTL_DAYS` to 1..90.
+- **Logging hygiene** (`patterns.md §13`): `configure_logging` now
+  `copy.deepcopy`s the module-level config dict before mutating
+  `.root.level` — repeat calls (tests, reloads) no longer compound.
+- **NEW reviewer checks** (`agents/flask-pattern-reviewer.md`):
+  - **Stage 2 grep**: `Constants\.[A-Z][a-z]+[A-Z]\w*` (PascalCase
+    Constants) → FAIL R15.
+  - **Stage 2 grep**: in `app/domain/dto/AccountSchema.py` only,
+    `_password|ptoken|otp(_|\b)|refresh_jti|device_token` → FAIL R67.
+  - **Stage 3 READ**: `app/model/User.py` must have all 8 auth columns
+    (_password, ptoken, ptoken_expires_at, otp, otp_created_at,
+    otp_attempts, refresh_jti, deleted_at) + bcrypt `@hybrid_property
+    password`.
+  - **Stage 3 READ**: `Settings.validate()` must include the wildcard /
+    JWT-bound / SECRET_KEY-length / ENV-set / CORS-non-empty gates.
+- **Bug fixes**:
+  - `auth-controller.py.md` companion service: 5 `Constants.PascalCase`
+    refs converted to `Constants.UPPER_SNAKE_CASE`.
+  - `validation-schema.py.md` + `patterns.md §4`: `Constants.NameTaken`
+    → `Constants.NAME_TAKEN`.
+  - `patterns.md §3` Service skeleton: `Role.Admin` → `Role.ADMIN`.
+  - `user-model.py.md` password setter docstring documents bcrypt's
+    72-byte truncation + recommends `validate.Length(min=12, max=72)`.
+  - `model.py.md` "Auth-shaped lookup methods" subsection removed
+    (duplicated `user-model.py.md`); replaced with a one-paragraph
+    pointer to avoid drift.
+  - `patterns.md §8`: explicit "Section-order note" explaining §10/§11
+    physically precede §9 (intentional, do not renumber).
+
 ## [1.0.7] — 2026-05-26
 
 Round-7 audit: NEW Settings/Logging/Constants skeletons, NEW User +

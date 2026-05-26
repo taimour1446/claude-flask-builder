@@ -105,7 +105,15 @@ class User(db.Model):
 
     @password.setter
     def password(self, plaintext: str) -> None:
-        """Hash and store. WHY bcrypt.gensalt(): cost factor 12 default."""
+        """Hash and store. WHY bcrypt.gensalt(): cost factor 12 default.
+
+        SECURITY — bcrypt silently truncates the input at **72 bytes**.
+        Two different passwords that differ only after byte 72 hash
+        identically. The paired `SignupValidation` / `ResetPasswordValidation`
+        schemas MUST enforce `validate=validate.Length(min=12, max=72)` on
+        the password field so this truncation can never produce two
+        equivalent-hash passwords from one user's intent.
+        """
         self._password = bcrypt.hashpw(plaintext.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
 
     def check_password(self, plaintext: str) -> bool:

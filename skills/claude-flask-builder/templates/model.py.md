@@ -55,51 +55,13 @@ class <Name>(db.Model):
         return db.session.query(<Name>.id).filter_by(name=name, deleted_at=None).first() is not None
 ```
 
-## Auth-shaped lookup methods (extend the User model with these)
+## User model — see the dedicated template
 
-The `auth-controller.py.md` companion service depends on these
-`@staticmethod` lookups on the **User** model. They follow the same shape as
-`get_by_id` above:
-
-```python
-@staticmethod
-def get_by_email(email: str) -> "User | None":
-    """Fetch an active user by canonical lowercased email."""
-    return db.session.query(User).filter_by(
-        email=email.lower(), deleted_at=None
-    ).first()
-
-
-@staticmethod
-def get_by_phone(phone: str) -> "User | None":
-    """Fetch an active user by phone (assumes caller has normalized to E.164).
-
-    WHY this method does NOT normalize: the Validation layer is the single
-    source of normalization (R26 — Validation owns request parsing). The
-    paired `*PhoneValidation` schema MUST canonicalize the field with e.g.
-    `phonenumbers.format_number(parsed, PhoneNumberFormat.E164)` before
-    passing the cleaned dict to the service. If we normalize here too, we
-    create two sources of truth and risk drift.
-    """
-    return db.session.query(User).filter_by(
-        phone=phone, deleted_at=None
-    ).first()
-
-
-@staticmethod
-def get_by_ptoken(ptoken: str) -> "User | None":
-    """Fetch active user by password-reset token (R65 — caller checks TTL + single-use)."""
-    return db.session.query(User).filter_by(
-        ptoken=ptoken, deleted_at=None
-    ).first()
-
-
-@staticmethod
-def get_by_refresh_jti(jti: str) -> "User | None":
-    """Fetch active user by current refresh-token jti (R60 rotation gate)."""
-    return db.session.query(User).filter_by(
-        refresh_jti=jti, deleted_at=None
-    ).first()
-```
+This generic `model.py.md` covers every domain model EXCEPT `User`. The
+`User` model has a fixed auth-specific shape (bcrypt hybrid password,
+ptoken/otp/refresh_jti columns, `get_by_email`/`get_by_phone`/
+`get_by_ptoken`/`get_by_refresh_jti` lookups) and lives in its own
+template — see `templates/user-model.py.md`. Do NOT duplicate those
+lookup methods onto other models.
 
 Checklist: R13 (plural snake_case), R40 (indexes), R43 (@staticmethod), R45 (Numeric), R46 (tz-aware), R47 (deleted_at), R61 (no __dict__.update), R44 (no `default=callable()` — pass the callable, not its result).

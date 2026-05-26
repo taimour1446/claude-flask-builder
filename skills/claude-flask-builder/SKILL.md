@@ -68,12 +68,28 @@ code task.
 ## Templates
 
 `templates/controller.py.md`, `service.py.md`, `validation-schema.py.md`,
-`dto-schema.py.md`, `model.py.md`, `user-model.py.md`,
-`account-schema.py.md`, `migration.py.md`, `pytest-endpoint.py.md`,
-`seeder.py.md`, `webhook.py.md`, `cron-job.py.md`, `app-factory.py.md`,
-`configuration.py.md`, `auth-controller.py.md`,
-`integration-client.py.md`, `dockerfile.md`, `docker-entrypoint.sh.md`,
-`env-example.md`.
+`account-validation.py.md`, `dto-schema.py.md`, `model.py.md`,
+`user-model.py.md`, `account-schema.py.md`, `migration.py.md`,
+`pytest-endpoint.py.md`, `conftest.py.md`, `seeder.py.md`, `webhook.py.md`,
+`cron-job.py.md`, `app-factory.py.md`, `configuration.py.md`,
+`auth-controller.py.md`, `integration-client.py.md`, `dockerfile.md`,
+`docker-entrypoint.sh.md`, `pyproject.toml.md`, `env-example.md`.
+
+`account-validation.py.md` defines the six auth-flow request schemas
+(Login/Signup/ForgotPassword/ResetPassword/SendOTP/VerifyOTP) with field
+normalization (email lowercase + phone E.164) and the enum-resistant
+signup uniqueness check.
+
+`conftest.py.md` is the mandatory pytest fixture surface — every fixture
+named in `testing.md` is implemented here (app, db_session SAVEPOINT,
+client, test_user, test_admin, authenticated_headers, mock_stripe,
+mock_twilio, mock_fcm, mock_responses, mail_outbox).
+
+`pyproject.toml.md` centralizes the lint + format + test config that the
+reviewer Stage 1 and the runner pytest both depend on
+(`[tool.ruff].select = "E,F,I,B,N,UP,ANN,S,SIM,RUF"`,
+`[tool.pytest.ini_options].testpaths = ["app/tests"]`,
+`--cov-fail-under=60`).
 
 `user-model.py.md` is the **specific** User model shape (extends the
 generic `model.py.md`). It includes the bcrypt-hybrid password, all auth

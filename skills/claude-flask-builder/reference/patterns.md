@@ -72,7 +72,7 @@ class XService:
     @staticmethod
     def method(request, current_user=None):
         data = Validation.validate(request, CreateXValidation())
-        Auth.assert_role(current_user, [Role.Admin])  # if role-gated
+        Auth.assert_role(current_user, [Role.ADMIN])  # if role-gated (R72)
         with db.session.begin_nested():  # SAVEPOINT for multi-model
             obj = X.create(data)
             Y.create(...)
@@ -92,7 +92,7 @@ class CreateXValidation(Schema):
     @validates_schema
     def custom(self, data, **kwargs):
         if X.exists(data['name']):
-            raise CustomValidationException(Constants.NameTaken)
+            raise CustomValidationException(Constants.NAME_TAKEN)
 ```
 
 ## 5. DTO schema (R27)
@@ -210,9 +210,16 @@ def token_required(fn: Callable) -> Callable:
 
 Round 1–4 had a duplicate RequestInterceptor stub here; Round 5 removed it
 because the full skeleton lives at §11. The slot is left numbered as
-"reserved" so cross-references elsewhere (`scaffold-checklist.md` cites
-`patterns.md §1/§7/§9/§10/§11`) remain stable. Do not renumber — adding a
-new section here is fine if it stays self-contained.
+"reserved" so cross-references elsewhere remain stable.
+
+> **Section-order note**: §10 and §11 are listed BEFORE §9 in this file
+> intentionally — §9 + §12 + §13 + §14 were appended in later rounds and
+> kept in addition-order to preserve git diffs. Logical ordering is:
+> §1 BaseResponse, §2 Controller, §3 Service, §4 Validation schema, §5 DTO
+> schema, §6 Model, §7 Auth, §10 Validation.validate, §11
+> RequestInterceptor, §9 cron jobs + distributed_lock, §12 Settings,
+> §13 Logging, §14 Constants. Cross-references use the section number
+> regardless of physical position.
 
 ## 10. Validation.validate (utils/Validation.py)
 Universal request-validator. Services call ONLY this — never `Schema().load(...)` directly.
@@ -474,7 +481,13 @@ class _Settings:
 
     @classmethod
     def validate(cls) -> None:
-        """Run once from Configuration.configure_settings(app). Raises on bad config."""
+        """Run once from Configuration.configure_settings(app). Raises on bad config.
+
+        Called as `settings.validate()` from `configure_settings` — Python
+        accepts classmethod calls on instances, so the bound `settings`
+        singleton is the canonical caller (cleaner reading than
+        `_Settings.validate()`).
+        """
         missing = [k for k in cls._REQUIRED_ALWAYS if not getattr(cls, k)]
         if missing:
             raise RuntimeError(f"Missing required env: {', '.join(missing)}")
@@ -487,6 +500,23 @@ class _Settings:
             raise RuntimeError("SECRET_KEY must be ≥32 raw bytes (see env-example.md)")
         if not cls.CORS_ORIGINS:
             raise RuntimeError("CORS_ORIGINS env required (comma-separated)")
+        # R64 — wildcard origin is forbidden when supports_credentials=True
+        # (the locked default in configuration.py.md). Reject at boot so a
+        # misconfigured deploy can never serve credentialed cross-origin
+        # requests to `*`.
+        if "*" in cls.CORS_ORIGINS:
+            raise RuntimeError(
+                "CORS_ORIGINS cannot contain '*' — wildcard + credentials is R64-forbidden"
+            )
+        # R60 implicit bound — access tokens must be short-lived. 1..60 min.
+        if not (1 <= cls.JWT_ACCESS_TTL_MINUTES <= 60):
+            raise RuntimeError(
+                f"JWT_ACCESS_TTL_MINUTES={cls.JWT_ACCESS_TTL_MINUTES} out of bounds (1..60)"
+            )
+        if not (1 <= cls.JWT_REFRESH_TTL_DAYS <= 90):
+            raise RuntimeError(
+                f"JWT_REFRESH_TTL_DAYS={cls.JWT_REFRESH_TTL_DAYS} out of bounds (1..90)"
+            )
 
 
 settings = _Settings()
@@ -549,94 +579,80 @@ _LOG_CONFIG_PROD = {
 
 def configure_logging(app: Flask, env: str, level: str) -> None:
     """Install the appropriate config + set the root level from LOG_LEVEL."""
-    config = _LOG_CONFIG_PROD if env in {"staging", "production"} else _LOG_CONFIG_DEV
+    # WHY deepcopy: the module-level _LOG_CONFIG_* dicts are templates.
+    # Mutating them directly would compound on repeat calls (tests, app
+    # reloads, multi-app deploys in same process) and silently override
+    # the original. Always copy before mutating.
+    import copy
+    base = _LOG_CONFIG_PROD if env in {"staging", "production"} else _LOG_CONFIG_DEV
+    config = copy.deepcopy(base)
     config["root"]["level"] = level.upper()
     logging.config.dictConfig(config)
     # WHY also bind app.logger: ensures Flask's own logger inherits root.
-    app.logger.handlers = []  # drop Flask's default to avoid double-logging
+    # Order matters: dictConfig() above has already installed the console
+    # handler on root; clearing Flask's own handlers + setting propagate
+    # routes Flask logs to root WITHOUT double-emitting.
+    app.logger.handlers = []
     app.logger.propagate = True
 ```
 
 ## 14. Constants (utils/Constants.py)
-Every enum + error-message class. `auth-controller.py.md`'s companion
-service consumes `Constants.InvalidToken` etc. by name — those identifiers
+Every enum + error-message string. `auth-controller.py.md`'s companion
+service consumes `Constants.INVALID_TOKEN` etc. by name — those identifiers
 MUST exist. Roles enum is required for `Auth.assert_role` (R72).
 
+WHY module-level strings (not classes): every prior attempt at "error
+message class with `__str__`" subtly fails because services raise
+`CustomValidationException(Constants.X)` passing the CLASS — not an
+instance — and `str(SomeClass)` returns the Python class repr, not the
+message. Module-level strings are the unambiguous shape:
+
 ```python
-"""Constants — enums + error-message classes. Imported by services + validations."""
+"""Constants — enums + error-message strings. Imported by services + validations."""
 import enum
 
 
+# ---- Enums ----
 class Role(str, enum.Enum):
-    """Account roles. Extend per project; Admin + Customer are baseline."""
+    """Account roles. Extend per project; ADMIN + CUSTOMER are baseline.
+
+    WHY (str, enum.Enum): members compare equal to their string values —
+    e.g. `Role.ADMIN == "admin"` is True. The User.role column stores
+    `Role.ADMIN.value` (the bare string), so DB reads round-trip cleanly.
+    """
 
     ADMIN = "admin"
     CUSTOMER = "customer"
 
 
-# ---- Error-message classes ----
-# WHY classes (not strings): keeps wording centralized; services raise
-# `CustomValidationException(Constants.InvalidToken)` and the exception's
-# `str()` resolves to `.message` (see Validation.validate in §10).
-# Each class' `message` is the human-readable string sent to clients
-# (`BaseResponse.respondError(message=...)`).
+# ---- Error messages (R67, R28) ----
+# WHY plain strings (not classes): services do
+# `raise CustomValidationException(Constants.INVALID_OTP)` — the exception
+# arg is the message string itself, and `str(exc)` returns it directly
+# (Python's Exception.__str__ joins args). No metaclass dance needed.
 
-class _Msg:
-    """Base class — `str(Constants.X)` returns the message string."""
-
-    message: str = ""
-
-    def __str__(self) -> str:  # pragma: no cover — trivial
-        return self.message
-
-
-class InvalidToken(_Msg):
-    message = "Invalid or expired token"
-
-
-class TokenExpired(_Msg):
-    message = "Token has expired — please log in again"
-
-
-class InvalidOTP(_Msg):
-    message = "OTP is invalid"
-
-
-class OTPExpired(_Msg):
-    message = "OTP has expired — request a new one"
-
-
-class TooManyOTPAttempts(_Msg):
-    message = "Too many OTP attempts — please request a new code"
-
-
-class NameTaken(_Msg):
-    message = "That name is already taken"
-
-
-class EmailTaken(_Msg):
-    message = "An account with that email already exists"
-
-
-class PhoneTaken(_Msg):
-    message = "An account with that phone already exists"
-
-
-class InvalidCredentials(_Msg):
-    message = "Email or password is incorrect"
-
-
-class PermissionDenied(_Msg):
-    message = "You do not have permission to perform this action"
-
-
-class ReturnURLNotAllowed(_Msg):
-    message = "Return URL is not in the allowlist"
+INVALID_TOKEN = "Invalid or expired token"
+TOKEN_EXPIRED = "Token has expired — please log in again"
+INVALID_OTP = "OTP is invalid"
+OTP_EXPIRED = "OTP has expired — request a new one"
+TOO_MANY_OTP_ATTEMPTS = "Too many OTP attempts — please request a new code"
+NAME_TAKEN = "That name is already taken"
+EMAIL_TAKEN = "An account with that email already exists"
+PHONE_TAKEN = "An account with that phone already exists"
+INVALID_CREDENTIALS = "Email or password is incorrect"
+PERMISSION_DENIED = "You do not have permission to perform this action"
+RETURN_URL_NOT_ALLOWED = "Return URL is not in the allowlist"
+REGISTRATION_FAILED = "Registration failed"  # enum-resistant generic for signup
 ```
 
 Services use these like:
 ```python
-raise CustomValidationException(Constants.InvalidOTP)
+raise CustomValidationException(Constants.INVALID_OTP)
 ```
-(`CustomValidationException` accepts a `_Msg` instance — its `__str__`
-delegates to `.message`. See `Validation.validate` in §10.)
+The exception's `str()` resolves to the message string directly because
+Python's `Exception.__str__` returns `str(self.args[0])` and `args[0]` is
+the bare string. No `__str__` override needed.
+
+**Naming convention**: `UPPER_SNAKE_CASE` per R15 (constants). Old
+`PascalCase` class-style identifiers (`Constants.InvalidOTP`) are NOT
+valid — they were a Round 7 experiment and were buggy.

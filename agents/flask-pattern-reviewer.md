@@ -89,6 +89,16 @@ fall back to BRE — alternation `|` and character classes `['"]` rely on ERE.
     (AWS access key), `ghp_[A-Za-z0-9]{36}` (GitHub PAT), or any hex/base64
     blob ≥40 chars assigned to a non-test variable → FAIL **security.md**
     "literal-looking secret"
+  - Old class-style Constants pattern in src — match
+    `Constants\.[A-Z][a-z]+[A-Z]\w*` (PascalCase: e.g. `Constants.InvalidOTP`,
+    `Constants.TokenExpired`) → FAIL **R15**. Constants MUST be
+    `UPPER_SNAKE_CASE` per R15 + the patterns.md §14 contract (module-level
+    strings). `Role.ADMIN` is exempt (enum member, all-caps).
+  - In `app/domain/dto/AccountSchema.py` ONLY: match any of
+    `_password|ptoken|otp(_|\b)|refresh_jti|device_token` → FAIL **R67**.
+    These fields are PII / secrets and the User DTO MUST whitelist only
+    id/email/phone/role/timestamps (see `templates/account-schema.py.md`
+    "Forbidden fields").
 
 **Stage 3 — SEMANTIC READ (grep alone insufficient — false positive / negative
 risk). For each of these, OPEN the file and reason about context:**
@@ -137,6 +147,19 @@ risk). For each of these, OPEN the file and reason about context:**
     `SESSION_COOKIE_SAMESITE` set to truthy/non-default values.
     `SECURE` MAY be conditional on `settings.ENV == "production"` (this is
     the canonical pattern — dev runs over HTTP). Missing any flag → FAIL R74.
+  - R65/R66/R60 (User model auth-column shape): READ `app/model/User.py`.
+    REQUIRE the following columns to exist (compare against
+    `templates/user-model.py.md`): `_password` (Text or String, mapped from
+    DB `password`), `ptoken` (String(64), unique, indexed), `ptoken_expires_at`
+    (DateTime tz-aware), `otp` (String(6)), `otp_created_at` (DateTime
+    tz-aware), `otp_attempts` (Integer default=0), `refresh_jti` (String(32),
+    unique, indexed), `deleted_at` (DateTime tz-aware). REQUIRE `@hybrid_property
+    password` with a setter that calls `bcrypt.hashpw`. FAIL each missing
+    column or missing bcrypt hybrid.
+  - Settings.validate completeness: READ `utils/Settings.py`'s `validate()`.
+    REQUIRE all of: required-attrs check, `SECRET_KEY` ≥32 bytes, ENV in
+    valid set, CORS_ORIGINS non-empty AND no `"*"`, `JWT_ACCESS_TTL_MINUTES`
+    bounded 1..60 (R60). Missing any → FAIL the matching rule.
   - R40 (every WHERE column indexed): READ each Alembic migration that
     adds a table OR a column; for every `filter_by(col=...)` /
     `.filter(Model.col == ...)` site found in services touching that
