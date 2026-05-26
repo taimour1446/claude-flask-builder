@@ -15,7 +15,57 @@
 - pipenv install --dev: pytest, pytest-flask, pytest-cov, responses, ruff, black, isort, pip-audit
 
 ### 2. Folder skeleton (see architecture.md)
-Create all dirs + empty __init__.py files.
+Create all dirs + `__init__.py` files. The `__init__.py` of each layer is a
+**barrel** — explicit re-exports, never `from .X import *`. Concrete shapes:
+
+```python
+# app/api/__init__.py — controllers expose blueprint factories
+from app.api.AccountController import account_blueprint
+# from app.api.<X>Controller import <x>_blueprint  ← add one line per controller
+```
+
+```python
+# app/domain/service/__init__.py — services exposed for the cron jobs + DI
+from app.domain.service.AccountService import AccountService
+# from app.domain.service.<X>Service import <X>Service
+```
+
+```python
+# app/domain/validation/__init__.py — explicit re-export of every schema class
+from app.domain.validation.AccountValidation import (
+    LoginValidation, SignupValidation, ForgotPasswordValidation,
+    ResetPasswordValidation, SendOTPValidation, VerifyOTPValidation,
+)
+# from app.domain.validation.<X>Validation import Create<X>Validation, Update<X>Validation
+```
+
+```python
+# app/domain/dto/__init__.py
+from app.domain.dto.AccountSchema import AccountSchema
+# from app.domain.dto.<X>Schema import <X>Schema
+```
+
+```python
+# app/model/__init__.py
+from app.model.User import User
+# from app.model.<X> import <X>
+```
+
+```python
+# app/scheduler_jobs/__init__.py — REQUIRED: import each job module so its
+# @scheduler.task decorator runs at app boot. Without this, no cron job
+# registers, no matter how many files live in the folder.
+from app.scheduler_jobs import (  # noqa: F401 — imports register decorators
+    # purge_pending_orders_job,
+    # send_pending_otp_reminders_job,
+)
+```
+
+`configuration.py.md`'s `register_blueprints` imports from `app.api`, which
+relies on `app/api/__init__.py` re-exporting every blueprint factory. If you
+add a new Controller, you MUST add its line to `app/api/__init__.py` AND
+register it in `Configuration.register_blueprints`. The reviewer PRE-FAILs
+plans that add a controller without both updates.
 
 ### 3. Foundations
 Each file below has a **full skeleton in `reference/patterns.md` sections
@@ -24,15 +74,43 @@ invent. Cross-references after each line point to the authoritative section.
 
 - **utils/Settings.py** — validated env config (FAIL FAST on missing required).
   Class with class-level `os.environ`-driven attrs; `Settings.validate()`
-  raises on first missing required at startup. Shape: read env in
-  `__init_subclass__`-like pattern OR a `@classmethod validate(cls)` called
-  from `Configuration.configure_settings(app)`. (See `security.md` "What the
-  scaffolder writes by default — Settings".)
+  raises on first missing required at startup. Shape: a singleton instance
+  `settings = Settings()` exposed at module level; `Settings.validate()`
+  called from `Configuration.configure_settings(app)`. (See `security.md`
+  "What the scaffolder writes by default — Settings".)
+
+  **Required attribute surface** (every consumer in patterns.md + templates
+  depends on these — Settings MUST declare each, with a sane default where
+  marked):
+  | Attr | Required | Source env var | Used by |
+  | --- | --- | --- | --- |
+  | `APP_NAME` | yes | `APP_NAME` | integration-client User-Agent |
+  | `APP_VERSION` | yes | `APP_VERSION` (semver) | health endpoint, integration-client UA |
+  | `ENV` | yes | `ENV` (dev/staging/production) | BaseResponse trace gate, cookie hardening |
+  | `LOG_LEVEL` | default INFO | `LOG_LEVEL` | configure_logging |
+  | `SECRET_KEY` | yes | `SECRET_KEY` | Flask sessions, JWT signing |
+  | `DATABASE_URI` | yes | `DATABASE_URI` | SQLAlchemy |
+  | `JWT_ACCESS_TTL_MINUTES` | default 30 | `JWT_ACCESS_TTL_MINUTES` | Auth.generate_tokens |
+  | `JWT_REFRESH_TTL_DAYS` | default 30 | `JWT_REFRESH_TTL_DAYS` | Auth.generate_tokens |
+  | `CORS_ORIGINS` | yes | `CORS_ORIGINS` (csv → list) | Flask-CORS |
+  | `MAX_CONTENT_LENGTH_BYTES` | default 8 MiB | `MAX_CONTENT_LENGTH_BYTES` | R63 upload cap |
+  | `MAIL_SERVER`/`MAIL_PORT`/`MAIL_USERNAME`/`MAIL_PASSWORD`/`MAIL_DEFAULT_SENDER` | when mail toggled | corresponding env | Flask-Mail |
+  | `STRIPE_SECRET_KEY` / `STRIPE_PUBLISHABLE_KEY` / `STRIPE_WEBHOOK_SECRET` / `STRIPE_RETURN_URL_ALLOWLIST` (csv → list) | when stripe toggled | corresponding env | Stripe integration |
+  | `TWILIO_ACCOUNT_SID` / `TWILIO_AUTH_TOKEN` / `TWILIO_FROM_NUMBER` | when twilio toggled | corresponding env | Twilio integration |
+  | `AWS_ACCESS_KEY` / `AWS_ACCESS_SECRET` / `S3_BUCKET` | when s3 toggled | corresponding env | S3 integration |
+
+  `Settings.validate()` enforces: required attrs are non-empty;
+  `len(SECRET_KEY) >= 32`; `ENV in {"dev","staging","production"}`;
+  CORS_ORIGINS / STRIPE_RETURN_URL_ALLOWLIST split on comma into list.
+
   **`configure_settings(app)` MUST mirror critical env values into `app.config`**:
-  at minimum `app.config["ENV"] = settings.ENV`, `app.config["SESSION_COOKIE_*"]`
-  flags (R74), and `app.config["MAX_CONTENT_LENGTH"]` (R63). This is what
-  lets `BaseResponse.respondError` gate its `trace` field on production
-  (`current_app.config.get("ENV") != "production"`).
+  at minimum `app.config["ENV"] = settings.ENV`, `app.config["SECRET_KEY"]`,
+  `app.config["SESSION_COOKIE_*"]` flags (R74 — `SECURE` MUST be
+  `settings.ENV == "production"`; `HTTPONLY=True`; `SAMESITE="Lax"`), and
+  `app.config["MAX_CONTENT_LENGTH"] = settings.MAX_CONTENT_LENGTH_BYTES`
+  (R63). This is what lets `BaseResponse.respondError` gate its `trace`
+  field on production (`current_app.config.get("ENV") != "production"`).
+
   **`SECRET_KEY`** must be `secrets.token_urlsafe(32)` (≥256 bits) — Settings
   rejects a SECRET_KEY shorter than 32 raw bytes at startup. The placeholder
   in `.env.example` is intentionally invalid so deploys fail fast.
@@ -64,12 +142,20 @@ invent. Cross-references after each line point to the authoritative section.
 ### 5. Model: base auth
 - model/User.py with: id, email (UNIQUE), phone (UNIQUE), _password (hybrid+bcrypt), role,
   ptoken + ptoken_expires_at, otp + otp_created_at + otp_attempts,
-  device_token, refresh_jti (String(32), nullable, regenerated on each refresh — required by `Auth.generate_tokens` in `patterns.md §7`),
+  device_token, refresh_jti (String(32), nullable, set to `secrets.token_urlsafe(16)` (~22 chars) on each refresh — required by `Auth.generate_tokens` in `patterns.md §7`; the column size headroom (32 vs 22) is intentional so swapping the jti generator to `token_urlsafe(24)` (~32 chars) does not require a migration),
   deleted_at, created/updated_at tz-aware
 
 ### 6. API + service + validation + DTO for auth
-- AccountController + AccountService + (Login/SignupValidation, ResetPasswordValidation, OTPValidation) + AccountSchema
-- /api/v1/auth/login, /signup, /reset-password, /verify-otp
+- AccountController + AccountService + AccountSchema
+- Validation classes (one file `AccountValidation.py`, many classes):
+  `LoginValidation`, `SignupValidation`, `ForgotPasswordValidation`,
+  `ResetPasswordValidation`, `SendOTPValidation`, `VerifyOTPValidation`
+- Endpoints (all under `/api/v1`):
+  `POST /auth/login`, `POST /auth/signup`, `POST /auth/forgot-password`,
+  `POST /auth/reset-password`, `POST /auth/send-otp`, `POST /auth/verify-otp`,
+  `POST /auth/refresh`, `GET /auth/me` (protected by `@token_required`)
+- The full controller + companion service shape lives in
+  `templates/auth-controller.py.md`. Scaffolder uses it verbatim.
 
 ### 7. App factory
 - application.py per architecture.md initialization order

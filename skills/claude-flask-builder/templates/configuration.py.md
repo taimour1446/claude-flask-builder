@@ -18,6 +18,7 @@ from flask import Flask, jsonify
 from flask_cors import CORS
 from flask_mail import Mail
 from marshmallow import ValidationError
+from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from app.configuration.Database import db
@@ -42,8 +43,10 @@ def configure_settings(app: Flask) -> None:
     # current_app.config to gate the dev-only `trace` field (R68).
     app.config["ENV"] = settings.ENV
     app.config["SECRET_KEY"] = settings.SECRET_KEY
-    # R74 — session cookie hardening
-    app.config["SESSION_COOKIE_SECURE"] = True
+    # R74 — session cookie hardening.
+    # WHY conditional Secure: dev runs over HTTP; True would silently drop
+    # the cookie. Production is HTTPS-only and MUST set Secure.
+    app.config["SESSION_COOKIE_SECURE"] = settings.ENV == "production"
     app.config["SESSION_COOKIE_HTTPONLY"] = True
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
     # R63 — upper bound for file uploads (image-bomb defense at the edge)
@@ -146,7 +149,7 @@ def _register_health(app: Flask) -> None:
     def health() -> Any:
         deps = {}
         try:
-            db.session.execute(db.text("SELECT 1"))
+            db.session.execute(text("SELECT 1"))  # SQLAlchemy 2.0: import text directly
             deps["db"] = "ok"
         except SQLAlchemyError:
             deps["db"] = "down"

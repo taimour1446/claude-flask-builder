@@ -49,14 +49,18 @@ PY
 
 # ---- 2. alembic upgrade ----
 # Idempotent: if head is already current, this is a no-op.
+# WHY no `pipenv run`: the runtime image installs the venv at /opt/venv and
+# puts it on PATH (see dockerfile.md). pipenv itself is NOT in the runtime
+# stage — only the resolved venv is. `flask` and `gunicorn` are available
+# directly because /opt/venv/bin is on PATH.
 log "running migrations…"
-pipenv run flask db upgrade
+flask db upgrade
 
 # ---- 3. exec gunicorn ----
 # WHY exec: replaces the shell so tini's SIGTERM reaches gunicorn directly,
 # which then runs --graceful-timeout draining in-flight requests (R112).
 log "starting gunicorn on 0.0.0.0:${PORT} (workers=${GUNICORN_WORKERS})…"
-exec pipenv run gunicorn \
+exec gunicorn \
     --bind "0.0.0.0:${PORT}" \
     --workers "${GUNICORN_WORKERS}" \
     --timeout "${GUNICORN_TIMEOUT}" \

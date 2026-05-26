@@ -137,9 +137,9 @@ class X(db.Model):
 ```
 
 ## 7. JWT auth (R60)
-- Auth.generate_token(user) returns access + refresh tokens
-- Access TTL 30 min, refresh 30 days, rotation on use
-- token_required decorator validates exp, loads user, injects current_user
+- `Auth.generate_tokens(user)` returns access + refresh tokens
+- Access TTL 30 min, refresh 30 days, rotation on use (refresh_jti rotated)
+- `@token_required` decorator validates exp, loads user, injects `current_user` kwarg
 
 ### Full implementation skeleton (utils/Auth.py)
 ```python
@@ -206,6 +206,14 @@ def token_required(fn: Callable) -> Callable:
     return wrapper
 ```
 
+## 8. (reserved)
+
+Round 1–4 had a duplicate RequestInterceptor stub here; Round 5 removed it
+because the full skeleton lives at §11. The slot is left numbered as
+"reserved" so cross-references elsewhere (`scaffold-checklist.md` cites
+`patterns.md §1/§7/§9/§10/§11`) remain stable. Do not renumber — adding a
+new section here is fine if it stays self-contained.
+
 ## 10. Validation.validate (utils/Validation.py)
 Universal request-validator. Services call ONLY this — never `Schema().load(...)` directly.
 
@@ -254,10 +262,19 @@ logger = logging.getLogger(__name__)
 # WHY allowlist: drift-resistant — adding a new field elsewhere never leaks
 # secrets through logs by default (R67).
 _REDACT_FIELDS: frozenset[str] = frozenset({
+    # Auth secrets
     "password", "new_password", "current_password",
-    "ptoken", "otp", "token", "refresh_token",
-    "card_number", "cvc", "cvv",
+    "ptoken", "otp", "token", "refresh_token", "access_token",
+    # Payment card data (PCI scope)
+    "card_number", "cvc", "cvv", "credit_card",
+    # API + provider secrets
     "stripe_secret", "stripe_secret_key", "api_key", "secret_key",
+    "authorization", "cookie",
+    # PII — GDPR/HIPAA-shaped fields. Redacted by default; remove if your
+    # downstream log pipeline already encrypts at rest AND you need the
+    # value for debugging.
+    "email", "phone", "phone_number", "ssn", "national_id",
+    "date_of_birth", "dob",
 })
 
 
@@ -293,9 +310,14 @@ class RequestInterceptor:
                 body = request.get_json(silent=True)
             except (TypeError, ValueError, BadRequest):
                 body = None
+            # WHY redact query args too: secrets often slip into URLs
+            # (e.g. `GET /reset?ptoken=...`). Access logs + reverse-proxy
+            # logs would otherwise capture them in plaintext.
+            redacted_args = _redact(dict(request.args.to_dict(flat=True))) or {}
             logger.info("request_in", extra={
                 "request_id": g.request_id, "method": request.method,
-                "path": request.path, "body": _redact(body),
+                "path": request.path, "args": redacted_args,
+                "body": _redact(body),
             })
 
         @app.after_request
@@ -333,6 +355,8 @@ import hashlib
 import logging
 from typing import Iterator
 
+from sqlalchemy import text
+
 from app.configuration.Database import db
 
 logger = logging.getLogger(__name__)
@@ -361,14 +385,14 @@ def distributed_lock(name: str) -> Iterator[bool]:
     """
     lock_id = _lock_id(name)
     acquired = bool(db.session.execute(
-        db.text("SELECT pg_try_advisory_lock(:k)"), {"k": lock_id}
+        text("SELECT pg_try_advisory_lock(:k)"), {"k": lock_id}
     ).scalar())
     try:
         yield acquired
     finally:
         if acquired:
             db.session.execute(
-                db.text("SELECT pg_advisory_unlock(:k)"), {"k": lock_id}
+                text("SELECT pg_advisory_unlock(:k)"), {"k": lock_id}
             )
             db.session.commit()
 ```

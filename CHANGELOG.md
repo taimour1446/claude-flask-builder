@@ -1,5 +1,60 @@
 # Changelog
 
+## [1.0.6] — 2026-05-26
+
+Round-6 audit: SQLAlchemy 2.0 fixes, Dockerfile runtime bug, 9 reviewer
+orphans closed, PII redaction, Stripe webhook bytes fix.
+
+- **Bug fixes (would have broken real deploys):**
+  - `docker-entrypoint.sh` no longer uses `pipenv run` — pipenv is NOT
+    installed in the runtime stage; the venv is on PATH. Both `flask db
+    upgrade` and `gunicorn` are called directly.
+  - `db.text(...)` → `from sqlalchemy import text` + `text(...)` in
+    `distributed_lock` (patterns.md §9) and `configuration.py.md` health
+    endpoint (SQLAlchemy 2.0 removed the passthrough).
+  - `SESSION_COOKIE_SECURE` is now conditional on `settings.ENV ==
+    "production"` (was unconditional True; broke dev sessions over HTTP).
+- **Reviewer coverage:** Stage 3 now has explicit READs for 11 previously-
+  orphan rules: R40 (WHERE column indexed), R47 (deleted_at not
+  email-mangling), R48 (synchronize_session + expire_all), R63 (file
+  upload allowlist + size + image-bomb), R65 (password reset strength +
+  TTL + single-use), R66 (OTP TTL + max-attempts + constant-time
+  compare), R72 (admin role assertion), R82 (response.json wrapped),
+  R84/R85 (Session singleton + vendor SDK), R90 (errorhandler types),
+  R92 (health JSON shape).
+- **Security hardening:**
+  - `_REDACT_FIELDS` adds PII (email, phone, ssn, credit_card,
+    national_id, dob, authorization, cookie).
+  - `RequestInterceptor` now redacts `request.args` (query strings) in
+    addition to JSON body — secrets in URLs no longer leak to access logs.
+  - `webhook.py.md` Stripe handler uses `request.get_data(as_text=False)`
+    — Stripe HMAC is computed over raw bytes; decoding could break
+    signature verification on edge cases.
+  - `integration-client.py.md` documents that `Idempotency-Key` is
+    provider-specific (Stripe canonical; others vary).
+- **Foundation completeness:**
+  - `model.py.md` gains `get_by_email`, `get_by_phone`, `get_by_ptoken`,
+    `get_by_refresh_jti` — required by `auth-controller.py.md`'s
+    companion service.
+  - `scaffold-checklist.md` step 3 gains comprehensive Settings attr
+    table (APP_NAME/APP_VERSION/ENV/LOG_LEVEL/SECRET_KEY/DATABASE_URI/
+    JWT_*/CORS_ORIGINS/MAX_CONTENT_LENGTH_BYTES/MAIL_*/STRIPE_*) +
+    Settings.validate() contract.
+  - `scaffold-checklist.md` step 2 gains concrete barrel skeletons for
+    every layer (api, service, validation, dto, model, scheduler_jobs).
+    `scheduler_jobs/__init__.py` MUST import each job to register
+    `@scheduler.task` decorators.
+  - `scaffold-checklist.md` step 5 documents `refresh_jti` size choice
+    (`secrets.token_urlsafe(16)` ~22 chars fits String(32) with headroom).
+  - `scaffold-checklist.md` step 6 lists all 8 auth endpoints matching
+    `auth-controller.py.md`.
+- **Doc consistency:**
+  - `patterns.md §7` prose now says `Auth.generate_tokens(user)` (plural).
+  - `patterns.md` gains `## 8. (reserved)` marker between §7 and §10 so
+    cross-refs to §1/§7/§9/§10/§11 remain stable.
+  - `testing.md` clarifies `api/` is the pytest cwd; `app/tests/` is the
+    testpaths relative to that.
+
 ## [1.0.5] — 2026-05-25
 
 Round-5 audit: convergence + new templates.

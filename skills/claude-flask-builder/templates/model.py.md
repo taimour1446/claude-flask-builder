@@ -55,4 +55,43 @@ class <Name>(db.Model):
         return db.session.query(<Name>.id).filter_by(name=name, deleted_at=None).first() is not None
 ```
 
+## Auth-shaped lookup methods (extend the User model with these)
+
+The `auth-controller.py.md` companion service depends on these
+`@staticmethod` lookups on the **User** model. They follow the same shape as
+`get_by_id` above:
+
+```python
+@staticmethod
+def get_by_email(email: str) -> "User | None":
+    """Fetch an active user by canonical lowercased email."""
+    return db.session.query(User).filter_by(
+        email=email.lower(), deleted_at=None
+    ).first()
+
+
+@staticmethod
+def get_by_phone(phone: str) -> "User | None":
+    """Fetch an active user by E.164 phone."""
+    return db.session.query(User).filter_by(
+        phone=phone, deleted_at=None
+    ).first()
+
+
+@staticmethod
+def get_by_ptoken(ptoken: str) -> "User | None":
+    """Fetch active user by password-reset token (R65 — caller checks TTL + single-use)."""
+    return db.session.query(User).filter_by(
+        ptoken=ptoken, deleted_at=None
+    ).first()
+
+
+@staticmethod
+def get_by_refresh_jti(jti: str) -> "User | None":
+    """Fetch active user by current refresh-token jti (R60 rotation gate)."""
+    return db.session.query(User).filter_by(
+        refresh_jti=jti, deleted_at=None
+    ).first()
+```
+
 Checklist: R13 (plural snake_case), R40 (indexes), R43 (@staticmethod), R45 (Numeric), R46 (tz-aware), R47 (deleted_at), R61 (no __dict__.update), R44 (no `default=callable()` — pass the callable, not its result).

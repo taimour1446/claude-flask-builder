@@ -1,13 +1,21 @@
 # Testing
 
 ## pytest layout
+Tests live at `app/tests/` (i.e. inside the `api/` project root the
+scaffolder creates — so the absolute layout is `<repo>/api/app/tests/`).
+`pyproject.toml` `[tool.pytest.ini_options].testpaths` MUST be `["app/tests"]`
+because pytest is invoked from `<repo>/api/`. `flask-runner` runs `pytest`
+from the same `api/` working directory.
+
 ```
-api/app/tests/
-├── conftest.py             # fixtures
-├── unit/                   # pure utils
-├── validation/             # schema tests
-├── integration/            # endpoint smoke tests
-└── e2e/                    # full flow w/ real DB + mocked externals
+api/                        # cwd for pytest, pipenv, gunicorn
+└── app/
+    └── tests/
+        ├── conftest.py     # fixtures
+        ├── unit/           # pure utils
+        ├── validation/     # schema tests
+        ├── integration/    # endpoint smoke tests
+        └── e2e/            # full flow w/ real DB + mocked externals
 ```
 
 ## conftest.py fixtures (must ship)

@@ -128,8 +128,57 @@ risk). For each of these, OPEN the file and reason about context:**
     docstrings, and example URLs in comments).
   - R74 (session cookie flags): READ `Configuration.py`; require ALL of
     `SESSION_COOKIE_SECURE`, `SESSION_COOKIE_HTTPONLY`,
-    `SESSION_COOKIE_SAMESITE` set to truthy/non-default values. Missing any
-    → FAIL R74.
+    `SESSION_COOKIE_SAMESITE` set to truthy/non-default values.
+    `SECURE` MAY be conditional on `settings.ENV == "production"` (this is
+    the canonical pattern — dev runs over HTTP). Missing any flag → FAIL R74.
+  - R40 (every WHERE column indexed): READ each Alembic migration that
+    adds a table OR a column; for every `filter_by(col=...)` /
+    `.filter(Model.col == ...)` site found in services touching that
+    model, confirm the column has `index=True` on the Column() declaration
+    OR an explicit `op.create_index` in the same migration. FAIL the
+    missing-index combinations.
+  - R47 (soft-delete pattern): READ each model with row-deletion behavior;
+    require an explicit `deleted_at` column. FAIL if the model uses
+    string-mangling on `email` / `phone` (e.g. appending `_deleted_<ts>`
+    suffix) as a soft-delete proxy — that pattern is forbidden.
+  - R48 (synchronize_session=False + expire_all): grep
+    `synchronize_session=False`; READ each call site — FAIL if neither
+    `db.session.expire_all()` nor an explicit refetch of the affected rows
+    follows in the same function.
+  - R63 (file upload checks): grep `request\.files`; READ each upload
+    handler — FAIL if missing ALL of: MIME-type allowlist
+    (`mimetypes.guess_type` or explicit content_type whitelist check),
+    explicit size assertion (or reliance on app.config['MAX_CONTENT_LENGTH']),
+    and `Image.MAX_IMAGE_PIXELS` set when PIL is imported (image-bomb).
+  - R65 (password reset token strength + TTL + single-use): READ the
+    forgot-password / reset-password service path — REQUIRE
+    `secrets.token_urlsafe(32)`, a TTL ≤15 min stored on a
+    `ptoken_expires_at` column, and the ptoken cleared (`= None`) on
+    success. FAIL each missing element.
+  - R66 (OTP TTL + max-attempts + constant-time compare): READ the
+    send-otp / verify-otp service path — REQUIRE TTL ≤5 min check,
+    `otp_attempts` counter increment on mismatch, max ≥5 attempts gate,
+    AND `secrets.compare_digest` (not `==`) for the comparison.
+  - R72 (admin role assertion): READ every service method invoked from an
+    admin route (controllers `*Admin*` or routes containing `/admin/`).
+    REQUIRE an `Auth.assert_role(current_user, [Role.Admin, ...])` or
+    equivalent gate as the FIRST statement of the service body. FAIL if
+    absent.
+  - R82 (response.json wrapped): grep `\.json\(\)`; READ each — FAIL
+    unless wrapped in `try/except (JSONDecodeError, ValueError)`.
+  - R84/R85 (per-provider Session + vendor SDK): READ each file under
+    `app/integrations/`. REQUIRE module-level `requests.Session()`
+    singleton OR direct vendor SDK use (stripe/twilio/firebase-admin/boto3).
+    FAIL hand-rolled `requests.*` directly inside service files when a
+    vendor SDK exists for that provider (Twilio, Firebase, Stripe).
+  - R90 (global errorhandlers): READ `Configuration.py`
+    `register_error_handlers`. REQUIRE `@app.errorhandler` registered for
+    EACH of: `CustomValidationException`, `ValidationError`,
+    `IntegrityError`, `SQLAlchemyError`, `jwt.ExpiredSignatureError`,
+    `jwt.InvalidTokenError`, generic `Exception`. FAIL any missing.
+  - R92 (health endpoint JSON shape): READ the `/health/check` route.
+    REQUIRE `jsonify(...)` returning a dict with `ok` + `version` + `deps`
+    keys. FAIL if the endpoint returns a plain string or a bare 200.
   - R81 (Stripe mutation without idempotency_key): grep `stripe\.\(PaymentIntent\|Refund\|Transfer\|Charge\|Customer\|Subscription\|Invoice\)\.create\b`
     for candidates; READ the argument list — FAIL if `idempotency_key=` absent.
 

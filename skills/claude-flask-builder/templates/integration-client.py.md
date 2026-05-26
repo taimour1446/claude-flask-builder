@@ -138,6 +138,14 @@ class <Provider>Client:
         :param idempotency_key: caller-provided to deduplicate retries; auto-
             generated if omitted. Persist the key on the originating record
             so reruns of the same user action reuse the same key.
+
+        NOTE on the `Idempotency-Key` header: this is the convention used
+        by Stripe (and a few others). Some providers ignore it; others use
+        a custom header name (Square: `Idempotency-Key`; PayPal:
+        `PayPal-Request-Id`; AWS APIs use a body field, not a header).
+        Adapt the header name per provider when using this template — the
+        reviewer enforces R81 (`idempotency_key=`) only on Stripe SDK calls,
+        not on this generic HTTP shape.
         """
         key = idempotency_key or _new_idempotency_key()
         url = f"{<Provider>Client._BASE_URL}/resources"
@@ -147,7 +155,7 @@ class <Provider>Client:
                 json=payload,
                 headers={
                     "Authorization": f"Bearer {<Provider>Client._API_KEY}",
-                    "Idempotency-Key": key,
+                    "Idempotency-Key": key,  # provider-specific; see note above
                 },
                 timeout=_DEFAULT_TIMEOUT_SECONDS,  # R80
             )
