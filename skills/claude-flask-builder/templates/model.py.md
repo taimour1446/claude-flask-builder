@@ -72,7 +72,15 @@ def get_by_email(email: str) -> "User | None":
 
 @staticmethod
 def get_by_phone(phone: str) -> "User | None":
-    """Fetch an active user by E.164 phone."""
+    """Fetch an active user by phone (assumes caller has normalized to E.164).
+
+    WHY this method does NOT normalize: the Validation layer is the single
+    source of normalization (R26 — Validation owns request parsing). The
+    paired `*PhoneValidation` schema MUST canonicalize the field with e.g.
+    `phonenumbers.format_number(parsed, PhoneNumberFormat.E164)` before
+    passing the cleaned dict to the service. If we normalize here too, we
+    create two sources of truth and risk drift.
+    """
     return db.session.query(User).filter_by(
         phone=phone, deleted_at=None
     ).first()

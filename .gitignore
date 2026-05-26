@@ -7,3 +7,9 @@ venv/
 .env*
 !.env.example
 .audit-state/
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.ruff_cache/
+.mypy_cache/

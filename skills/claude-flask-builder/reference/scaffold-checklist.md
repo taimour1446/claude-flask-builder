@@ -100,8 +100,20 @@ invent. Cross-references after each line point to the authoritative section.
   | `AWS_ACCESS_KEY` / `AWS_ACCESS_SECRET` / `S3_BUCKET` | when s3 toggled | corresponding env | S3 integration |
 
   `Settings.validate()` enforces: required attrs are non-empty;
-  `len(SECRET_KEY) >= 32`; `ENV in {"dev","staging","production"}`;
-  CORS_ORIGINS / STRIPE_RETURN_URL_ALLOWLIST split on comma into list.
+  `len(SECRET_KEY.encode("utf-8")) >= 32`; `ENV in {"dev","staging","production"}`;
+  `CORS_ORIGINS` is a non-empty list.
+
+  **CSV-shaped env vars** (currently `CORS_ORIGINS` and
+  `STRIPE_RETURN_URL_ALLOWLIST`) are read as comma-separated strings from
+  the environment and TRANSFORMED into `list[str]` at Settings instantiation.
+  Settings exposes them as `list[str]`; downstream callers (Flask-CORS,
+  Stripe integration) iterate them. The canonical helper:
+  ```python
+  def _csv(name: str, default: str = "") -> list[str]:
+      raw = os.environ.get(name, default)
+      return [v.strip() for v in raw.split(",") if v.strip()]
+  ```
+  Full Settings skeleton lives in `patterns.md §12` — do not invent.
 
   **`configure_settings(app)` MUST mirror critical env values into `app.config`**:
   at minimum `app.config["ENV"] = settings.ENV`, `app.config["SECRET_KEY"]`,

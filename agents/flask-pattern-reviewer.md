@@ -19,6 +19,12 @@ You are the quality gate. Read-only. Zero tolerance. You do NOT write code.
 - `reference/security.md` (the 50+ corrections list — enforce ALL)
 - `reference/architecture.md` (layer boundaries)
 - `reference/patterns.md`, `data-patterns.md`, `integrations.md`, `testing.md`
+- Templates the change is supposed to follow — at minimum `templates/*.md`
+  files matching the changed layer. For auth-shaped changes also read
+  `templates/auth-controller.py.md`; for app-wiring changes
+  `templates/configuration.py.md`; for deploy/CI changes
+  `templates/dockerfile.md` + `docker-entrypoint.sh.md`; for any external
+  HTTP integration `templates/integration-client.py.md`.
 
 ## Two modes
 
@@ -137,10 +143,14 @@ risk). For each of these, OPEN the file and reason about context:**
     model, confirm the column has `index=True` on the Column() declaration
     OR an explicit `op.create_index` in the same migration. FAIL the
     missing-index combinations.
-  - R47 (soft-delete pattern): READ each model with row-deletion behavior;
-    require an explicit `deleted_at` column. FAIL if the model uses
-    string-mangling on `email` / `phone` (e.g. appending `_deleted_<ts>`
-    suffix) as a soft-delete proxy — that pattern is forbidden.
+  - R47 (soft-delete pattern): READ each model that has row-deletion. The
+    model MUST have an explicit `deleted_at = Column(DateTime(timezone=True),
+    nullable=True)` column AND every `get_by_*` lookup MUST filter
+    `deleted_at=None`. Concrete grep tells: `grep -nE "self\.email\s*\+=|
+    self\.email\s*=\s*f.*deleted|self\.phone\s*\+=" <model files>` — any
+    hit is a string-mangling soft-delete = FAIL R47. Absent the
+    `deleted_at` column entirely on a model that has a delete service
+    method = FAIL R47.
   - R48 (synchronize_session=False + expire_all): grep
     `synchronize_session=False`; READ each call site — FAIL if neither
     `db.session.expire_all()` nor an explicit refetch of the affected rows
@@ -167,10 +177,15 @@ risk). For each of these, OPEN the file and reason about context:**
   - R82 (response.json wrapped): grep `\.json\(\)`; READ each — FAIL
     unless wrapped in `try/except (JSONDecodeError, ValueError)`.
   - R84/R85 (per-provider Session + vendor SDK): READ each file under
-    `app/integrations/`. REQUIRE module-level `requests.Session()`
-    singleton OR direct vendor SDK use (stripe/twilio/firebase-admin/boto3).
-    FAIL hand-rolled `requests.*` directly inside service files when a
-    vendor SDK exists for that provider (Twilio, Firebase, Stripe).
+    `app/integrations/`. R84: REQUIRE module-level `requests.Session()`
+    singleton OR direct vendor SDK use. R85: applies ONLY to providers
+    that ship an official Python SDK — currently {Stripe (`stripe`),
+    Twilio (`twilio`), Firebase (`firebase-admin`), AWS (`boto3`), Google
+    Cloud Storage (`google-cloud-storage`)}. FAIL when an integration
+    targets one of these providers but uses raw `requests.*` (hand-rolled
+    HTTP). Generic / less-common HTTP APIs without a stable SDK may use
+    `requests.Session()` per the integration-client.py.md shape and do
+    NOT trigger R85.
   - R90 (global errorhandlers): READ `Configuration.py`
     `register_error_handlers`. REQUIRE `@app.errorhandler` registered for
     EACH of: `CustomValidationException`, `ValidationError`,

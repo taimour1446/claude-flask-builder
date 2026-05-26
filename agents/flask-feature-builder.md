@@ -35,8 +35,14 @@ Produce a PLAN with these EXACT sections (the reviewer audits in this order):
    `app/domain/validation/__init__.py`, `app/domain/dto/__init__.py`,
    `app/model/__init__.py`. Reviewer PRE-FAILs if a new file in any of these
    layers is added without the corresponding barrel update.
-4. **`application.py` registration** — list the blueprint factory call you'll
-   add (`app.register_blueprint(x_blueprint(), url_prefix='/api/v1')`).
+4. **Blueprint registration** — since Round 5, all blueprints are wired
+   from `Configuration.register_blueprints(app)` (NOT `application.py`
+   directly). List the late-import line you'll add inside
+   `register_blueprints`:
+   `from app.api.<X>Controller import <x>_blueprint` →
+   `app.register_blueprint(<x>_blueprint(), url_prefix='/api/v1')`.
+   You must ALSO add `from app.api.<X>Controller import <x>_blueprint`
+   to `app/api/__init__.py` (the layer barrel) — listed in section 3.
 5. **Alembic migration** — file slug (≥3 words, R50), `upgrade()` outline
    (tables/columns/indexes/UniqueConstraints), `downgrade()` outline (never
    `pass` — R49).
@@ -51,15 +57,22 @@ Produce a PLAN with these EXACT sections (the reviewer audits in this order):
    - [ ] new alembic migration
    - [ ] new pytest file(s)
    - [ ] barrels of touched layers
-   - [ ] `application.py` blueprint registration ONLY (no other edits)
+   - [ ] `Configuration.register_blueprints` — add ONE late-import +
+         register_blueprint line (no other edits to Configuration.py)
+   - [ ] adding a `User.get_by_*` lookup method when the feature's
+         auth/lookup flow requires it (User model is otherwise off-limits)
    - [ ] `.env.example` (add new keys; don't change existing)
    - [ ] `pyproject.toml` ONLY if a Locked-Stack dep already present needs
          a version bump approved by user
 
-   **OFF-LIMITS unless explicitly approved**: existing controllers,
-   services, models not in this feature; `Settings`/`BaseResponse`/
-   `RequestInterceptor`/`Auth`; `Configuration.py` non-blueprint code;
-   Dockerfile; CI workflows; existing migrations.
+   **OFF-LIMITS unless explicitly approved**: existing controllers /
+   services / models / validations / dtos not in this feature;
+   `Settings`/`BaseResponse`/`RequestInterceptor`/`Auth`/`Logging`/
+   `distributed_lock`; `Configuration.py` outside the single
+   `register_blueprints` line; the `User` model EXCEPT adding a new
+   `get_by_*` lookup if the feature needs it; Dockerfile;
+   `docker-entrypoint.sh`; CI workflows; existing migrations (write a
+   NEW migration instead of editing an existing one — R49).
 
 **STOP here.** Return PLAN to orchestrator. Do NOT write code until the
 orchestrator returns PRE-CHECK = PASS from `flask-pattern-reviewer`.

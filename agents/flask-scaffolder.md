@@ -36,13 +36,31 @@ Never hardcode `~/.claude/...` (the symlink target can change).
 Execute `scaffold-checklist.md` steps 1–13 in order. Critically:
 - Use `pipenv` with Python 3.11+.
 - ALL env vars validated by `utils/Settings.py` — fail fast on missing required.
-- Multi-stage Dockerfile, non-root user, HEALTHCHECK, gunicorn entrypoint.
+  Settings shape comes from `scaffold-checklist.md` step 3's attr table +
+  `patterns.md §12` (Settings) skeleton.
+- Foundation utils (Settings/Logging/BaseResponse/Auth/Validation/
+  RequestInterceptor/Helper/TimezoneHelper/Constants/distributed_lock):
+  copy verbatim from `patterns.md §1, §7, §9, §10, §11, §12, §13, §14`
+  — do not invent.
+- Multi-stage Dockerfile, non-root user, HEALTHCHECK, gunicorn entrypoint
+  (copy from `templates/dockerfile.md` + `docker-entrypoint.sh.md`).
+  The runtime stage runs `flask` and `gunicorn` directly (NOT
+  `pipenv run …`) — pipenv is only in the builder stage.
 - Alembic alembic.ini `script_location = migrations` (NOT db/).
 - NEVER `db.create_all()` — Alembic owns schema.
 - NEVER hardcoded secrets — `.env.example` only.
-- First migration creates User table with indexes (email, phone, role, deleted_at).
+- First migration creates User table with indexes (email, phone, role, deleted_at)
+  AND the auth columns from step 5 (ptoken/ptoken_expires_at, otp/
+  otp_created_at/otp_attempts, refresh_jti).
 - conftest.py ships all fixtures listed in `testing.md`.
 - CI workflow: ruff + black + pytest + coverage (60% gate).
+
+### Required barrels (do not skip — reviewer PRE-FAILs on missing barrels)
+Write every `__init__.py` from the concrete shapes in `scaffold-checklist.md`
+step 2. Critically:
+- `app/api/__init__.py` re-exports `account_blueprint`.
+- `app/scheduler_jobs/__init__.py` imports each `*_job` module — without
+  this, `@scheduler.task` decorators never run.
 
 Every file you write follows the matching `templates/*.md` AND the comment
 standard (file header, function docstrings, WHY comments).

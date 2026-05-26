@@ -269,7 +269,11 @@ _REDACT_FIELDS: frozenset[str] = frozenset({
     "card_number", "cvc", "cvv", "credit_card",
     # API + provider secrets
     "stripe_secret", "stripe_secret_key", "api_key", "secret_key",
-    "authorization", "cookie",
+    # NOTE: `Authorization` and `Cookie` HEADER values are NOT in this list
+    # because _redact() operates on request body + args dicts only, not on
+    # headers. The interceptor deliberately does NOT log `request.headers`
+    # at all (it would explode log volume + reliably leak tokens). If you
+    # need header logging, redact at log-pipeline level, not here.
     # PII — GDPR/HIPAA-shaped fields. Redacted by default; remove if your
     # downstream log pipeline already encrypts at rest AND you need the
     # value for debugging.
@@ -396,3 +400,243 @@ def distributed_lock(name: str) -> Iterator[bool]:
             )
             db.session.commit()
 ```
+
+## 12. Settings (utils/Settings.py)
+The single env-config singleton. Every consumer in `patterns.md` + templates
+reads from this. `validate()` runs once at startup from
+`Configuration.configure_settings(app)` and FAILs FAST on missing required.
+
+```python
+"""Settings — validated env config. FAIL FAST on missing required at startup."""
+import os
+from typing import ClassVar
+
+
+def _csv(name: str, default: str = "") -> list[str]:
+    """Parse a comma-separated env var into a stripped, non-empty list."""
+    raw = os.environ.get(name, default)
+    return [v.strip() for v in raw.split(",") if v.strip()]
+
+
+class _Settings:
+    """All env values. Instantiated once at module load as `settings`."""
+
+    # Required core
+    APP_NAME: ClassVar[str] = os.environ.get("APP_NAME", "")
+    APP_VERSION: ClassVar[str] = os.environ.get("APP_VERSION", "")
+    ENV: ClassVar[str] = os.environ.get("ENV", "")
+    LOG_LEVEL: ClassVar[str] = os.environ.get("LOG_LEVEL", "INFO")
+    SECRET_KEY: ClassVar[str] = os.environ.get("SECRET_KEY", "")
+    DATABASE_URI: ClassVar[str] = os.environ.get("DATABASE_URI", "")
+
+    # JWT (R60)
+    JWT_ACCESS_TTL_MINUTES: ClassVar[int] = int(os.environ.get("JWT_ACCESS_TTL_MINUTES", "30"))
+    JWT_REFRESH_TTL_DAYS: ClassVar[int] = int(os.environ.get("JWT_REFRESH_TTL_DAYS", "30"))
+
+    # CORS (R64) — env is comma-separated; transformed to list here
+    CORS_ORIGINS: ClassVar[list[str]] = _csv("CORS_ORIGINS")
+
+    # Upload cap (R63)
+    MAX_CONTENT_LENGTH_BYTES: ClassVar[int] = int(
+        os.environ.get("MAX_CONTENT_LENGTH_BYTES", str(8 * 1024 * 1024))  # 8 MiB
+    )
+
+    # Mail (set when mail toggle on)
+    MAIL_SERVER: ClassVar[str] = os.environ.get("MAIL_SERVER", "")
+    MAIL_PORT: ClassVar[int] = int(os.environ.get("MAIL_PORT", "587"))
+    MAIL_USERNAME: ClassVar[str] = os.environ.get("MAIL_USERNAME", "")
+    MAIL_PASSWORD: ClassVar[str] = os.environ.get("MAIL_PASSWORD", "")
+    MAIL_DEFAULT_SENDER: ClassVar[str] = os.environ.get("MAIL_DEFAULT_SENDER", "")
+
+    # Stripe (set when stripe toggle on) — R69, R70, R81
+    STRIPE_SECRET_KEY: ClassVar[str] = os.environ.get("STRIPE_SECRET_KEY", "")
+    STRIPE_PUBLISHABLE_KEY: ClassVar[str] = os.environ.get("STRIPE_PUBLISHABLE_KEY", "")
+    STRIPE_WEBHOOK_SECRET: ClassVar[str] = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+    # CSV → list of URL-prefix strings; integration-client.py.md uses
+    # `any(return_url.startswith(p) for p in settings.STRIPE_RETURN_URL_ALLOWLIST)`.
+    STRIPE_RETURN_URL_ALLOWLIST: ClassVar[list[str]] = _csv("STRIPE_RETURN_URL_ALLOWLIST")
+
+    # Twilio (set when twilio toggle on)
+    TWILIO_ACCOUNT_SID: ClassVar[str] = os.environ.get("TWILIO_ACCOUNT_SID", "")
+    TWILIO_AUTH_TOKEN: ClassVar[str] = os.environ.get("TWILIO_AUTH_TOKEN", "")
+    TWILIO_FROM_NUMBER: ClassVar[str] = os.environ.get("TWILIO_FROM_NUMBER", "")
+
+    # AWS S3 (set when s3 toggle on)
+    AWS_ACCESS_KEY: ClassVar[str] = os.environ.get("AWS_ACCESS_KEY", "")
+    AWS_ACCESS_SECRET: ClassVar[str] = os.environ.get("AWS_ACCESS_SECRET", "")
+    S3_BUCKET: ClassVar[str] = os.environ.get("S3_BUCKET", "")
+
+    # ---- Validation ----
+    _REQUIRED_ALWAYS: ClassVar[tuple[str, ...]] = (
+        "APP_NAME", "APP_VERSION", "ENV", "SECRET_KEY", "DATABASE_URI",
+    )
+    _VALID_ENVS: ClassVar[frozenset[str]] = frozenset({"dev", "staging", "production"})
+
+    @classmethod
+    def validate(cls) -> None:
+        """Run once from Configuration.configure_settings(app). Raises on bad config."""
+        missing = [k for k in cls._REQUIRED_ALWAYS if not getattr(cls, k)]
+        if missing:
+            raise RuntimeError(f"Missing required env: {', '.join(missing)}")
+        if cls.ENV not in cls._VALID_ENVS:
+            raise RuntimeError(
+                f"ENV={cls.ENV!r} not in {sorted(cls._VALID_ENVS)}"
+            )
+        # R60 / SECRET_KEY — ≥32 raw bytes (HS256 minimum)
+        if len(cls.SECRET_KEY.encode("utf-8")) < 32:
+            raise RuntimeError("SECRET_KEY must be ≥32 raw bytes (see env-example.md)")
+        if not cls.CORS_ORIGINS:
+            raise RuntimeError("CORS_ORIGINS env required (comma-separated)")
+
+
+settings = _Settings()
+```
+
+Toggle-driven enforcement (Stripe / Twilio / S3 etc.) is added to
+`validate()` in the project's own Settings — the scaffolder appends one
+required-check per enabled integration based on the user's toggle inputs.
+
+## 13. Logging (utils/Logging.py)
+Structured stdlib logging. JSON formatter in staging/production; readable
+plain formatter in dev. Driven by `LOG_LEVEL` env.
+
+```python
+"""configure_logging — install root logger config. Called by Configuration."""
+import logging
+import logging.config
+from flask import Flask
+
+
+_LOG_CONFIG_DEV = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "plain": {
+            "format": "%(asctime)s %(levelname)s %(name)s %(message)s",
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "plain",
+            "stream": "ext://sys.stdout",
+        },
+    },
+    "root": {"handlers": ["console"], "level": "INFO"},
+}
+
+_LOG_CONFIG_PROD = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "json": {
+            "()": "pythonjsonlogger.jsonlogger.JsonFormatter",
+            "format": "%(asctime)s %(levelname)s %(name)s %(message)s",
+            # WHY rename_fields: keep canonical names across log pipelines.
+            "rename_fields": {"levelname": "level", "asctime": "ts"},
+        },
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "json",
+            "stream": "ext://sys.stdout",
+        },
+    },
+    "root": {"handlers": ["console"], "level": "INFO"},
+}
+
+
+def configure_logging(app: Flask, env: str, level: str) -> None:
+    """Install the appropriate config + set the root level from LOG_LEVEL."""
+    config = _LOG_CONFIG_PROD if env in {"staging", "production"} else _LOG_CONFIG_DEV
+    config["root"]["level"] = level.upper()
+    logging.config.dictConfig(config)
+    # WHY also bind app.logger: ensures Flask's own logger inherits root.
+    app.logger.handlers = []  # drop Flask's default to avoid double-logging
+    app.logger.propagate = True
+```
+
+## 14. Constants (utils/Constants.py)
+Every enum + error-message class. `auth-controller.py.md`'s companion
+service consumes `Constants.InvalidToken` etc. by name — those identifiers
+MUST exist. Roles enum is required for `Auth.assert_role` (R72).
+
+```python
+"""Constants — enums + error-message classes. Imported by services + validations."""
+import enum
+
+
+class Role(str, enum.Enum):
+    """Account roles. Extend per project; Admin + Customer are baseline."""
+
+    ADMIN = "admin"
+    CUSTOMER = "customer"
+
+
+# ---- Error-message classes ----
+# WHY classes (not strings): keeps wording centralized; services raise
+# `CustomValidationException(Constants.InvalidToken)` and the exception's
+# `str()` resolves to `.message` (see Validation.validate in §10).
+# Each class' `message` is the human-readable string sent to clients
+# (`BaseResponse.respondError(message=...)`).
+
+class _Msg:
+    """Base class — `str(Constants.X)` returns the message string."""
+
+    message: str = ""
+
+    def __str__(self) -> str:  # pragma: no cover — trivial
+        return self.message
+
+
+class InvalidToken(_Msg):
+    message = "Invalid or expired token"
+
+
+class TokenExpired(_Msg):
+    message = "Token has expired — please log in again"
+
+
+class InvalidOTP(_Msg):
+    message = "OTP is invalid"
+
+
+class OTPExpired(_Msg):
+    message = "OTP has expired — request a new one"
+
+
+class TooManyOTPAttempts(_Msg):
+    message = "Too many OTP attempts — please request a new code"
+
+
+class NameTaken(_Msg):
+    message = "That name is already taken"
+
+
+class EmailTaken(_Msg):
+    message = "An account with that email already exists"
+
+
+class PhoneTaken(_Msg):
+    message = "An account with that phone already exists"
+
+
+class InvalidCredentials(_Msg):
+    message = "Email or password is incorrect"
+
+
+class PermissionDenied(_Msg):
+    message = "You do not have permission to perform this action"
+
+
+class ReturnURLNotAllowed(_Msg):
+    message = "Return URL is not in the allowlist"
+```
+
+Services use these like:
+```python
+raise CustomValidationException(Constants.InvalidOTP)
+```
+(`CustomValidationException` accepts a `_Msg` instance — its `__str__`
+delegates to `.message`. See `Validation.validate` in §10.)

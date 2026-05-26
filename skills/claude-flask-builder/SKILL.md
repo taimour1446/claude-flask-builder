@@ -68,11 +68,22 @@ code task.
 ## Templates
 
 `templates/controller.py.md`, `service.py.md`, `validation-schema.py.md`,
-`dto-schema.py.md`, `model.py.md`, `migration.py.md`, `pytest-endpoint.py.md`,
+`dto-schema.py.md`, `model.py.md`, `user-model.py.md`,
+`account-schema.py.md`, `migration.py.md`, `pytest-endpoint.py.md`,
 `seeder.py.md`, `webhook.py.md`, `cron-job.py.md`, `app-factory.py.md`,
 `configuration.py.md`, `auth-controller.py.md`,
 `integration-client.py.md`, `dockerfile.md`, `docker-entrypoint.sh.md`,
 `env-example.md`.
+
+`user-model.py.md` is the **specific** User model shape (extends the
+generic `model.py.md`). It includes the bcrypt-hybrid password, all auth
+columns (ptoken/otp/refresh_jti/deleted_at), and the four `get_by_*`
+lookup methods consumed by `auth-controller.py.md`.
+
+`account-schema.py.md` is the only DTO permitted to serialize a User row.
+It is a strict whitelist (id/email/phone/role/timestamps) — the reviewer
+FAILs any addition of `_password`, `ptoken*`, `otp*`, `refresh_jti`, or
+`device_token`.
 
 `integration-client.py.md` is the mandatory shape for any new external-API
 wrapper in `app/integrations/` — it embodies R17/R18/R20/R80/R82/R83/R84/R85

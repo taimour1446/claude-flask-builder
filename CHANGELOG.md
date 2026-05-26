@@ -1,5 +1,59 @@
 # Changelog
 
+## [1.0.7] — 2026-05-26
+
+Round-7 audit: NEW Settings/Logging/Constants skeletons, NEW User +
+AccountSchema templates, 15 fixes.
+
+- **NEW reference skeletons** (close 3 big "scaffolder must invent" gaps):
+  - `patterns.md §12 Settings` — full `_Settings` class with `_csv` helper,
+    `os.environ`-driven attrs, classmethod `validate()` (FAIL FAST on
+    missing/short SECRET_KEY/invalid ENV/empty CORS_ORIGINS), singleton.
+  - `patterns.md §13 Logging` — `_LOG_CONFIG_DEV` (plain) +
+    `_LOG_CONFIG_PROD` (python-json-logger JsonFormatter) +
+    `configure_logging(app, env, level)`.
+  - `patterns.md §14 Constants` — `Role(str, Enum)` {ADMIN, CUSTOMER} +
+    `_Msg` base + 11 concrete error-message classes consumed by
+    `auth-controller.py.md` (InvalidToken / TokenExpired / InvalidOTP /
+    OTPExpired / TooManyOTPAttempts / NameTaken / EmailTaken / PhoneTaken
+    / InvalidCredentials / PermissionDenied / ReturnURLNotAllowed).
+- **NEW templates** (close User-specific gaps):
+  - `templates/user-model.py.md` — bcrypt hybrid password, ptoken / otp /
+    refresh_jti / deleted_at columns, all four `get_by_*` static methods,
+    explicit field assignment (R61).
+  - `templates/account-schema.py.md` — whitelist-only DTO (id / email /
+    phone / role / timestamps). Explicit "Forbidden fields" section
+    rejects _password / ptoken* / otp* / refresh_jti / device_token.
+- **Bug fixes (would have produced wrong code):**
+  - `_REDACT_FIELDS` no longer lists `authorization` / `cookie` — they
+    were dead code (interceptor never logs headers).
+  - `model.py.md get_by_phone` docstring no longer claims E.164 normalization
+    that doesn't happen — clarifies Validation layer is the normalizer (R26).
+  - Reviewer R47 now has concrete grep heuristics for email/phone
+    string-mangling soft-delete (was hand-wavey).
+  - Reviewer R85 enumerates SDK-bearing providers
+    {Stripe/Twilio/Firebase/AWS/GCS}; generic HTTP integrations are
+    exempt (fixes false-positive on the integration-client template itself).
+- **Agent updates aligning with Round-5 Configuration template:**
+  - flask-feature-builder PLAN section 4: blueprint registration goes
+    through `Configuration.register_blueprints` (not `application.py`).
+  - flask-feature-builder Permitted-touch adds "User.get_by_* lookup when
+    the feature requires it"; OFF-LIMITS rewritten with explicit carve-out.
+  - flask-runner Step 6 accepts 200 OR 503 (degraded) — was only 200,
+    would have false-FAILed health checks where a dep is intentionally
+    down in tests.
+  - flask-pattern-reviewer "Always read first" now matches templates to
+    the change layer (auth → auth-controller, deploy → dockerfile, etc.).
+  - flask-scaffolder Procedure cross-refs `patterns.md §1/§7/§9/§10/§11/
+    §12/§13/§14` + Required Barrels subsection calling out
+    `scheduler_jobs/__init__.py` (without which `@scheduler.task`
+    decorators never run).
+- **scaffold-checklist:** Settings step gains explicit `_csv()` helper
+  code + cross-ref to `patterns.md §12`.
+- **.gitignore:** adds `.pytest_cache/`, `.coverage`, `.coverage.*`,
+  `htmlcov/`, `.ruff_cache/`, `.mypy_cache/`.
+- **SKILL.md** templates list adds `user-model.py.md` + `account-schema.py.md`.
+
 ## [1.0.6] — 2026-05-26
 
 Round-6 audit: SQLAlchemy 2.0 fixes, Dockerfile runtime bug, 9 reviewer

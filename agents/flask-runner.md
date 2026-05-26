@@ -69,7 +69,13 @@ pass. Capture logs, report structured pass/fail.
 
 ### 6. Smoke run
 - Start `pipenv run gunicorn -b 127.0.0.1:8000 app.application:create_application()` in background.
-- Curl `GET /api/v1/health/check` — expect 200 + JSON.
+- Curl `GET /api/v1/health/check` — expect a JSON body with keys
+  `{ok, version, env, deps}` and a status of EITHER:
+  - **200** when `ok == true` (all deps healthy) — PASS.
+  - **503** when `ok == false` (degraded — at least one dep down) — PASS
+    only if the test environment DELIBERATELY has that dep offline; FAIL
+    otherwise. Echo the `deps` map so the orchestrator can decide.
+  A non-JSON body, missing keys, or any other status → FAIL.
 - Stop gunicorn.
 
 ## Output (structured report)
