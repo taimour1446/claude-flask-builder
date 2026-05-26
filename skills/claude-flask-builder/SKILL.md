@@ -72,8 +72,20 @@ code task.
 `user-model.py.md`, `account-schema.py.md`, `migration.py.md`,
 `pytest-endpoint.py.md`, `conftest.py.md`, `seeder.py.md`, `webhook.py.md`,
 `cron-job.py.md`, `app-factory.py.md`, `configuration.py.md`,
-`auth-controller.py.md`, `integration-client.py.md`, `dockerfile.md`,
-`docker-entrypoint.sh.md`, `pyproject.toml.md`, `env-example.md`.
+`auth-controller.py.md`, `integration-client.py.md`, `helper.py.md`,
+`logging-filter.py.md`, `dockerfile.md`, `docker-entrypoint.sh.md`,
+`pyproject.toml.md`, `env-example.md`.
+
+`helper.py.md` is the locked shape for `utils/Helper.py` — `generate_otp`
+(secrets.randbelow), `generate_ptoken` (secrets.token_urlsafe(32)),
+`generate_jti` (secrets.token_urlsafe(16)), `pagination` (offset-based,
+fixed envelope shape), `merge_dict` (recursive). Closes the only
+remaining HIGH-RISK hand-wave for R20/R65/R60 drift.
+
+`logging-filter.py.md` is the OPTIONAL skill-level mitigation for the
+`logger.extra` PII leakage gap documented in `patterns.md §15.2` — a
+`logging.Filter` that runs `_redact` over every LogRecord's `extra`
+attributes. Install only if your log pipeline doesn't already redact.
 
 `account-validation.py.md` defines the six auth-flow request schemas
 (Login/Signup/ForgotPassword/ResetPassword/SendOTP/VerifyOTP) with field

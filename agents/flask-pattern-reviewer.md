@@ -61,6 +61,8 @@ All Stage 2 patterns use Extended Regular Expressions: run as
 `grep -rEn <pattern> <path>` (or `rg -nE` if ripgrep available). Never
 fall back to BRE — alternation `|` and character classes `['"]` rely on ERE.
 
+  - `from\s+[\w.]+\s+import\s+\*` in src → FAIL **R04** (also caught by
+    ruff F403 in Stage 1; this grep is belt-and-braces)
   - `print(` in src → FAIL **R18**
   - `random.randrange|random.choice` for security → FAIL **R20**
   - `model.__dict__.update` → FAIL **R61**

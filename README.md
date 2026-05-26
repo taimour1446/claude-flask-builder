@@ -67,6 +67,13 @@ its **code**. Failures loop back until they pass.
 Once installed, trigger with `/claude-flask-builder`, or just ask Claude to
 build or extend a Flask app.
 
+## See also
+
+- [CHANGELOG.md](CHANGELOG.md) — version history; the current line is documented per round.
+- [CONTRIBUTING.md](CONTRIBUTING.md) — how to propose changes; the
+  audit-driven workflow (`/audit-loop` + double-gated review) is the
+  source of truth for what lands.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

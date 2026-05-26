@@ -1,5 +1,37 @@
 # Changelog
 
+## [1.0.10] — 2026-05-26
+
+Round-10 audit (final round of the 10-round loop): NEW helper.py +
+logging-filter templates close the last HIGH-RISK hand-wave; one
+reviewer belt-and-braces grep; README polish.
+
+- **NEW `templates/helper.py.md`** — closes the only remaining HIGH-RISK
+  drift surface. Locked implementations:
+  - `generate_otp()` → `secrets.randbelow(1_000_000)` zero-padded (R20)
+  - `generate_ptoken()` → `secrets.token_urlsafe(32)` (R65)
+  - `generate_jti()` → `secrets.token_urlsafe(16)` (R60)
+  - `pagination(schema, items, query)` → fixed envelope shape, limit
+    capped at 100
+  - `merge_dict(base, override)` → recursive (shallow merge silently
+    loses nested keys)
+- **NEW `templates/logging-filter.py.md`** — optional skill-level
+  mitigation for the `logger.extra` PII leakage gap from §15.2. A
+  `logging.Filter` that walks every LogRecord's `__dict__` and applies
+  the shared `_redact` from `RequestInterceptor` to non-standard attrs.
+  Install only if your log pipeline doesn't already redact.
+- **Reviewer** Stage 2 gains a belt-and-braces grep for R04
+  (`from X import *` — already caught by ruff F403 in Stage 1, but the
+  explicit grep documents the rule and catches projects with
+  incomplete ruff config).
+- **README** "See also" section now links CHANGELOG.md + CONTRIBUTING.md.
+- **SKILL.md** Templates list adds `helper.py.md` + `logging-filter.py.md`
+  (24 templates total).
+
+**Audit-loop status**: Reached the spec's 10-round cap. All 120+
+actionable findings across 10 rounds shipped. 10 known-gaps remain
+documented (all LOW-RISK or out-of-skill-scope).
+
 ## [1.0.9] — 2026-05-26
 
 Round-9 audit: SQLAlchemy session isolation fix + Settings int safety +
