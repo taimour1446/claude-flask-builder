@@ -23,7 +23,7 @@ def create_application() -> Flask:
     configure_inject(app)         # DI binder (empty by default)
     configure_mail(app)
     register_error_handlers(app)  # global @errorhandler set (R90)
-    register_blueprints(app)      # all blueprints under /api/v1
+    register_blueprints(app)      # health + register_api → Swagger UI + OpenAPI
     RequestInterceptor.intercept(app)  # X-Request-ID + redacted logging
     register_scheduler_jobs(app)
     return app

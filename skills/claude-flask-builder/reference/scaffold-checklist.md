@@ -158,14 +158,23 @@ invent. Cross-references after each line point to the authoritative section.
   deleted_at, created/updated_at tz-aware
 
 ### 6. API + service + validation + DTO for auth
-- AccountController + AccountService + AccountSchema
+- AccountController (flask-smorest Blueprint) + AccountService +
+  AccountSchema (DTO) + TokenSchema (DTO returned by login/signup/refresh
+  containing access + refresh tokens).
 - Validation classes (one file `AccountValidation.py`, many classes):
   `LoginValidation`, `SignupValidation`, `ForgotPasswordValidation`,
-  `ResetPasswordValidation`, `SendOTPValidation`, `VerifyOTPValidation`
-- Endpoints (all under `/api/v1`):
-  `POST /auth/login`, `POST /auth/signup`, `POST /auth/forgot-password`,
-  `POST /auth/reset-password`, `POST /auth/send-otp`, `POST /auth/verify-otp`,
-  `POST /auth/refresh`, `GET /auth/me` (protected by `@token_required`)
+  `ResetPasswordValidation`, `SendOTPValidation`, `VerifyOTPValidation`,
+  `RefreshValidation`.
+- Endpoints (all under `/api/v1/auth`):
+  `POST /login`, `POST /signup`, `POST /forgot-password`,
+  `POST /reset-password`, `POST /send-otp`, `POST /verify-otp`,
+  `POST /refresh`, `GET /me` (protected by `@token_required`).
+- **OpenAPI**: every endpoint above already carries
+  `@blp.arguments(<ValidationSchema>)` + `@blp.response(<status>, <DTO>)`
+  in `templates/auth-controller.py.md` — Swagger UI at `/api/v1/docs`
+  auto-renders the full auth flow. Public endpoints clear the global
+  Bearer requirement with `@blp.doc(security=[])`; `/me` keeps the
+  padlock via `@blp.doc(security=[{"BearerAuth": []}])`.
 - The full controller + companion service shape lives in
   `templates/auth-controller.py.md`. Scaffolder uses it verbatim.
 

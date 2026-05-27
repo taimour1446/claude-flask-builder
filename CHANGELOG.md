@@ -1,5 +1,56 @@
 # Changelog
 
+## [1.1.0] — 2026-05-27
+
+**Feature: auto-generated OpenAPI 3.x + Swagger UI by default + persistent
+JWT auth.**
+
+Minor-version bump (not patch) — every new scaffold now ships Swagger UI
+out of the box, and existing scaffolds need a controller rewrite to
+adopt the new flask-smorest decorators.
+
+- **NEW dependency** (locked stack): `flask-smorest 0.42.x` + `apispec 6.x`
+  + `apispec-webframeworks`. Reads existing Marshmallow validation
+  classes (R26) AND DTO classes (R27) to **auto-generate the OpenAPI 3
+  spec** — zero hand-written YAML, no schema duplication.
+- **Swagger UI** at `/api/v1/docs`; ReDoc at `/api/v1/redoc`; raw spec
+  at `/api/v1/openapi.json`. Enabled by default in every scaffold.
+- **Persistent JWT auth** via `persistAuthorization=true` in the Swagger
+  UI config. After a single `/api/v1/auth/login` call, paste the access
+  token into the Authorize dialog once — it's saved to browser
+  `localStorage` and auto-attached to every subsequent "Try it" request.
+  Survives full browser restart.
+- **Production gating** of the UI: public in dev/staging; in production
+  hides UI when `OPENAPI_DOCS_ENABLED=false`, OR requires
+  `?token=<OPENAPI_DOCS_TOKEN>` query param, OR requires any valid
+  Bearer login. The raw `openapi.json` endpoint stays available (CI / SDK
+  generators read it).
+- **NEW patterns.md §16** — `configure_openapi(app)` factory: title +
+  version from APP_NAME/APP_VERSION, all 3 docs URLs, `BearerAuth`
+  security scheme, prod gate hook.
+- **NEW coding-standards section 13** — R150 (every controller uses
+  flask_smorest.Blueprint + @bp.arguments + @bp.response + @bp.doc(security)),
+  R151 (`persistAuthorization=True` is locked), R152 (BearerAuth is the
+  canonical security scheme).
+- **Reviewer Stage 3** gains an R150 READ that walks every
+  `app/api/*Controller.py` file and FAILs missing decorators.
+- **Templates updated**: `controller.py.md` + `auth-controller.py.md`
+  now use `flask_smorest.Blueprint` with `@bp.arguments` +
+  `@bp.response` + `@bp.doc(security=[...])`. /auth/me carries the
+  protected scheme; signup/login/forgot/reset/otp/refresh declare
+  `security=[]` to override the global Bearer requirement.
+- **Configuration.py** gains `register_api(app)` calling
+  `configure_openapi` + `api.register_blueprint(...)`.
+- **Settings** gains `OPENAPI_TITLE`, `OPENAPI_VERSION`,
+  `OPENAPI_DOCS_ENABLED`, `OPENAPI_DOCS_TOKEN`.
+- **env-example.md** ships the 4 new vars with comments.
+- **README** documents the feature with the "login once, try every
+  endpoint" UX promise.
+
+Migration note for existing scaffolds built on prior versions: see
+`templates/controller.py.md` for the decorator pattern; the previous
+`flask.Blueprint` code keeps working but won't appear in the OpenAPI spec.
+
 ## [1.0.10] — 2026-05-26
 
 Round-10 audit (final round of the 10-round loop): NEW helper.py +

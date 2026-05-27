@@ -51,6 +51,16 @@ GOOGLE_API_KEY=
 TOLLGURU_API_KEY=
 TOLLGURU_URL=https://prod.tollguru.com    # P22-7 — env, not hardcoded
 
+# === OpenAPI / Swagger (auto-enabled — every scaffold ships /api/v1/docs) ===
+# WHY default-on: the spec is generated from Marshmallow validation + DTO
+# schemas (R26/R27) automatically; there's no per-endpoint YAML to write.
+# Production deploys MAY set OPENAPI_DOCS_ENABLED=false to hide the UI;
+# the openapi.json endpoint stays available (CI tools read it).
+OPENAPI_TITLE=                       # defaults to APP_NAME if blank
+OPENAPI_VERSION=                     # defaults to APP_VERSION if blank
+OPENAPI_DOCS_ENABLED=true            # set false in prod to hide the UI
+OPENAPI_DOCS_TOKEN=                  # optional: when ENV=production, /docs requires ?token=<this>
+
 # === Observability ===
 SENTRY_DSN=
 LOG_LEVEL=INFO

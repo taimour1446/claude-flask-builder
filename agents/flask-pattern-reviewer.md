@@ -132,6 +132,18 @@ risk). For each of these, OPEN the file and reason about context:**
     Also flag `requests.Session()` use that omits a default timeout.
   - R46 (DateTime without timezone=True): grep `Column(DateTime` — READ each
     line; FAIL if `timezone=True` absent.
+  - **R150 (OpenAPI auto-spec coverage)**: READ every controller file under
+    `app/api/*Controller.py`. For EACH route handler:
+      * REQUIRE `flask_smorest.Blueprint` (not plain `flask.Blueprint`).
+      * REQUIRE `@bp.response(<status>, <Schema>)` on every handler — the
+        OpenAPI spec needs the response shape.
+      * If the handler accepts a JSON body (POST/PUT/PATCH), REQUIRE
+        `@bp.arguments(<ValidationSchema>)`.
+      * REQUIRE `@bp.doc(...)` with explicit `security=[]` (public) OR
+        `security=[{"BearerAuth": []}]` (protected). Missing `security`
+        means Swagger UI shows the padlock incorrectly.
+    FAIL each missing decorator with the rule id R150 (added to coding-
+    standards.md under section 13 "API documentation").
   - R60 (JWT exp claim): READ `utils/Auth.py` (or wherever
     `jwt.encode` appears). FAIL if any `jwt.encode(...)` call's payload
     dict does NOT contain an `"exp"` key.

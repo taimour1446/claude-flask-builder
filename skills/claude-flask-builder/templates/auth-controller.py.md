@@ -8,12 +8,27 @@ Covers rules: R60 (JWT exp claim), R65 (password reset token ≥32 bytes +
 assertion in service), all standard 4-layer rules.
 
 ```python
-"""AccountController — authentication surface (login/signup/reset/otp)."""
+"""AccountController — flask-smorest blueprint for /auth/* endpoints.
+
+OpenAPI: auto-generated. Every method's request body + response shape
+comes from the @blp.arguments(<Validation>) + @blp.response(<DTO>)
+decorators, which read the Marshmallow schemas directly. The public
+endpoints clear the global Bearer requirement with `@blp.doc(security=[])`;
+/auth/me requires a Bearer token.
+"""
 import logging
 
-from flask import Blueprint, request
+from flask import request
+from flask_smorest import Blueprint
 
+from app.domain.dto.AccountSchema import AccountSchema
+from app.domain.dto.TokenSchema import TokenSchema
 from app.domain.service.AccountService import AccountService
+from app.domain.validation.AccountValidation import (
+    SignupValidation, LoginValidation, ForgotPasswordValidation,
+    ResetPasswordValidation, SendOTPValidation, VerifyOTPValidation,
+    RefreshValidation,
+)
 from app.utils.Auth import token_required
 from app.utils.BaseResponse import BaseResponse
 from app.utils.Validation import CustomValidationException
@@ -21,12 +36,28 @@ from app.utils.Validation import CustomValidationException
 logger = logging.getLogger(__name__)
 
 
-def account_blueprint() -> Blueprint:
-    bp = Blueprint("account", __name__)
+# WHY public_doc / protected_doc: reused on every route to keep the spec
+# annotation consistent. `security=[]` clears the global Bearer
+# requirement (the openapi factory in patterns.md §16 sets BearerAuth
+# globally). `tags=["auth"]` groups routes under "auth" in Swagger UI.
+public_doc = {"tags": ["auth"], "security": []}
+protected_doc = {"tags": ["auth"], "security": [{"BearerAuth": []}]}
 
-    @bp.route("/auth/signup", methods=["POST"])
-    def signup() -> BaseResponse:
-        """Create a customer account. Returns tokens on success."""
+
+def account_blueprint() -> Blueprint:
+    """Build the /auth/* blueprint with auto-generated OpenAPI spec."""
+    bp = Blueprint(
+        "account", __name__,
+        url_prefix="/auth",
+        description="Authentication: signup, login, password reset, OTP, refresh.",
+    )
+
+    @bp.route("/signup", methods=["POST"])
+    @bp.arguments(SignupValidation)
+    @bp.response(200, TokenSchema)
+    @bp.doc(**public_doc)
+    def signup(payload: dict) -> BaseResponse:  # noqa: ARG001 — payload via decorator
+        """Create a customer account. Returns access + refresh tokens on success."""
         try:
             data = AccountService.signup(request)
             return BaseResponse.respond(data, message="Signup successful")
@@ -36,8 +67,11 @@ def account_blueprint() -> Blueprint:
             logger.exception("signup_failed")
             return BaseResponse.respondError(message="Internal error")
 
-    @bp.route("/auth/login", methods=["POST"])
-    def login() -> BaseResponse:
+    @bp.route("/login", methods=["POST"])
+    @bp.arguments(LoginValidation)
+    @bp.response(200, TokenSchema)
+    @bp.doc(**public_doc)
+    def login(payload: dict) -> BaseResponse:  # noqa: ARG001
         """Validate credentials and issue access + refresh tokens (R60)."""
         try:
             data = AccountService.login(request)
@@ -48,19 +82,25 @@ def account_blueprint() -> Blueprint:
             logger.exception("login_failed")
             return BaseResponse.respondError(message="Internal error")
 
-    @bp.route("/auth/forgot-password", methods=["POST"])
-    def forgot_password() -> BaseResponse:
+    @bp.route("/forgot-password", methods=["POST"])
+    @bp.arguments(ForgotPasswordValidation)
+    @bp.response(200)
+    @bp.doc(**public_doc)
+    def forgot_password(payload: dict) -> BaseResponse:  # noqa: ARG001
         """Issue a password-reset token (R65: 32-byte secret, 15-min TTL, single-use)."""
         try:
             AccountService.forgot_password(request)
-            # WHY always 200: never confirm whether the email exists (enum-resistance).
+            # WHY always 200: never confirm whether the email exists.
             return BaseResponse.respond(None, message="If the email exists, a reset link was sent")
         except Exception:
             logger.exception("forgot_password_failed")
             return BaseResponse.respondError(message="Internal error")
 
-    @bp.route("/auth/reset-password", methods=["POST"])
-    def reset_password() -> BaseResponse:
+    @bp.route("/reset-password", methods=["POST"])
+    @bp.arguments(ResetPasswordValidation)
+    @bp.response(200)
+    @bp.doc(**public_doc)
+    def reset_password(payload: dict) -> BaseResponse:  # noqa: ARG001
         """Consume reset token and set new password (R65: single-use, TTL check)."""
         try:
             AccountService.reset_password(request)
@@ -71,9 +111,12 @@ def account_blueprint() -> Blueprint:
             logger.exception("reset_password_failed")
             return BaseResponse.respondError(message="Internal error")
 
-    @bp.route("/auth/send-otp", methods=["POST"])
-    def send_otp() -> BaseResponse:
-        """Send an OTP via SMS / email (R66: 5-min TTL)."""
+    @bp.route("/send-otp", methods=["POST"])
+    @bp.arguments(SendOTPValidation)
+    @bp.response(200)
+    @bp.doc(**public_doc)
+    def send_otp(payload: dict) -> BaseResponse:  # noqa: ARG001
+        """Send an OTP via SMS (R66: 5-min TTL)."""
         try:
             AccountService.send_otp(request)
             return BaseResponse.respond(None, message="OTP sent")
@@ -83,8 +126,11 @@ def account_blueprint() -> Blueprint:
             logger.exception("send_otp_failed")
             return BaseResponse.respondError(message="Internal error")
 
-    @bp.route("/auth/verify-otp", methods=["POST"])
-    def verify_otp() -> BaseResponse:
+    @bp.route("/verify-otp", methods=["POST"])
+    @bp.arguments(VerifyOTPValidation)
+    @bp.response(200, TokenSchema)
+    @bp.doc(**public_doc)
+    def verify_otp(payload: dict) -> BaseResponse:  # noqa: ARG001
         """Verify an OTP (R66: max-attempts rate limit, attempts counter)."""
         try:
             data = AccountService.verify_otp(request)
@@ -95,8 +141,11 @@ def account_blueprint() -> Blueprint:
             logger.exception("verify_otp_failed")
             return BaseResponse.respondError(message="Internal error")
 
-    @bp.route("/auth/refresh", methods=["POST"])
-    def refresh() -> BaseResponse:
+    @bp.route("/refresh", methods=["POST"])
+    @bp.arguments(RefreshValidation)
+    @bp.response(200, TokenSchema)
+    @bp.doc(**public_doc)
+    def refresh(payload: dict) -> BaseResponse:  # noqa: ARG001
         """Exchange a valid refresh token for a new access token (R60: jti rotation)."""
         try:
             data = AccountService.refresh(request)
@@ -107,10 +156,12 @@ def account_blueprint() -> Blueprint:
             logger.exception("refresh_failed")
             return BaseResponse.respondError(message="Internal error", auth_error=1)
 
-    @bp.route("/auth/me", methods=["GET"])
+    @bp.route("/me", methods=["GET"])
+    @bp.response(200, AccountSchema)
+    @bp.doc(**protected_doc)  # Swagger UI shows the padlock on this one
     @token_required
     def me(current_user) -> BaseResponse:
-        """Return the calling user's profile."""
+        """Return the calling user's profile. Requires a Bearer access token."""
         return BaseResponse.respond(AccountService.serialize(current_user))
 
     return bp

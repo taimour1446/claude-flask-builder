@@ -10,6 +10,9 @@
 | Alembic | 1.13.x | |
 | Flask-Seeder | latest | |
 | Marshmallow | 3.20.x | |
+| flask-smorest | 0.42.x | OpenAPI 3.x + Swagger UI; reads `@blp.arguments(<Validation>)` + `@blp.response(<DTO>)` to AUTO-GENERATE the spec from existing Marshmallow schemas — no hand-written YAML |
+| apispec | 6.x | flask-smorest dependency; pinned because flask-smorest API surface assumes 6.x |
+| apispec-webframeworks | latest | flask-smorest dependency |
 | Flask-Mail | 0.10.x | |
 | Flask-CORS | 4.0.x | |
 | Flask-APScheduler | latest | |

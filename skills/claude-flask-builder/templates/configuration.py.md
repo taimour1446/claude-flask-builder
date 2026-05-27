@@ -160,15 +160,41 @@ def _register_health(app: Flask) -> None:
         return jsonify(body), 200 if body["ok"] else 503
 
 
-def register_blueprints(app: Flask) -> None:
-    """Register every blueprint under /api/v1. Order does not matter."""
+def register_api(app: Flask):
+    """Wire flask-smorest Api + Swagger UI + auto-generated OpenAPI spec.
+
+    The Api instance owns blueprint registration so flask-smorest can
+    introspect each route's `@blp.arguments` / `@blp.response` decorators
+    and emit the OpenAPI 3 spec at /api/v1/openapi.json. Swagger UI is at
+    /api/v1/docs with `persistAuthorization=True` — token entered ONCE in
+    the Authorize dialog is reused for every subsequent /try-it request.
+    """
+    # Late import: avoids circular import via Settings → Openapi → Settings.
+    from app.utils.Openapi import configure_openapi  # noqa: PLC0415
     from app.api import (  # noqa: PLC0415 — late import to avoid model-class-load cycles
         account_blueprint,
         # ... add new blueprint factories here ...
     )
+
+    api = configure_openapi(app)
+    # Each blueprint already declares its own url_prefix (e.g.
+    # `Blueprint("account", __name__, url_prefix="/auth")`). flask-smorest
+    # combines it with `OPENAPI_URL_PREFIX = "/api/v1"` so the final path
+    # is /api/v1/auth/login etc.
+    api.register_blueprint(account_blueprint())
+    # api.register_blueprint(<x>_blueprint())
+
+    return api
+
+
+def register_blueprints(app: Flask) -> None:
+    """Register Flask-native blueprints (health + anything outside flask-smorest)."""
     _register_health(app)
-    app.register_blueprint(account_blueprint(), url_prefix="/api/v1")
-    # app.register_blueprint(<x>_blueprint(), url_prefix="/api/v1")
+    # WHY register_api is invoked AFTER _register_health: the health endpoint
+    # uses a plain Flask route and stays OUT of the OpenAPI spec by design
+    # (it's an infra contract, not a public API). Application-level
+    # blueprints go through register_api(app) so they appear in /docs.
+    register_api(app)
 
 
 def register_scheduler_jobs(app: Flask) -> None:

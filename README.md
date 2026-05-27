@@ -57,6 +57,30 @@ already fixed.
 has approved its **plan**, and cannot finish until the reviewer has approved
 its **code**. Failures loop back until they pass.
 
+## Auto-generated API docs (Swagger UI)
+
+Every scaffolded app ships **Swagger UI at `/api/v1/docs`** and the raw
+OpenAPI 3 spec at `/api/v1/openapi.json` — both by default, no opt-in.
+
+The spec is **auto-generated from the Marshmallow schemas** the skill
+already requires for request validation (R26) and response serialization
+(R27). When `flask-feature-builder` adds a new endpoint, the
+`@blp.arguments(<ValidationSchema>)` + `@blp.response(<status>, <DTO>)`
+decorators on the controller method tell `flask-smorest` to reflect those
+exact schemas into the OpenAPI spec — no hand-written YAML, no
+duplication, no drift between validation and docs.
+
+**Persistent JWT auth in Swagger UI**: after a single `/api/v1/auth/login`
+call, paste the access token into Swagger UI's Authorize dialog once.
+`persistAuthorization=true` saves it to browser `localStorage`, and every
+subsequent "Try it out" request auto-attaches `Authorization: Bearer
+<token>` — no re-pasting per request, even across browser restarts.
+
+In production, the UI is gated behind either an env-set
+`OPENAPI_DOCS_TOKEN` query param or any valid Bearer login; the
+`openapi.json` endpoint stays publicly available for CI / SDK
+generators.
+
 ## Installation
 
 ```

@@ -474,6 +474,16 @@ class _Settings:
     MAIL_PASSWORD: ClassVar[str] = os.environ.get("MAIL_PASSWORD", "")
     MAIL_DEFAULT_SENDER: ClassVar[str] = os.environ.get("MAIL_DEFAULT_SENDER", "")
 
+    # OpenAPI / Swagger UI (default-on; see §16 + `templates/openapi.py.md`)
+    # Title/version default to APP_NAME/APP_VERSION so a fresh scaffold
+    # has working defaults without extra env config.
+    OPENAPI_TITLE: ClassVar[str] = os.environ.get("OPENAPI_TITLE", "") or APP_NAME
+    OPENAPI_VERSION: ClassVar[str] = os.environ.get("OPENAPI_VERSION", "") or APP_VERSION
+    OPENAPI_DOCS_ENABLED: ClassVar[bool] = os.environ.get(
+        "OPENAPI_DOCS_ENABLED", "true"
+    ).lower() in {"1", "true", "yes", "on"}
+    OPENAPI_DOCS_TOKEN: ClassVar[str] = os.environ.get("OPENAPI_DOCS_TOKEN", "")
+
     # Stripe (set when stripe toggle on) — R69, R70, R81
     STRIPE_SECRET_KEY: ClassVar[str] = os.environ.get("STRIPE_SECRET_KEY", "")
     STRIPE_PUBLISHABLE_KEY: ClassVar[str] = os.environ.get("STRIPE_PUBLISHABLE_KEY", "")
@@ -730,3 +740,146 @@ If you want skill-level protection, add a `logging.Filter` to the root
 logger that runs the `_redact` helper from §11 over every record's
 `extra` dict before formatting. The skill ships an example in
 `templates/logging-filter.py.md` (added when this gap is upgraded).
+
+## 16. OpenAPI / Swagger UI (utils/Openapi.py)
+
+**Enabled by default in every scaffold.** The OpenAPI 3.x spec is generated
+**automatically from the existing Marshmallow validation + DTO schemas** —
+the same classes that already do request validation (R26) and response
+serialization (R27). There is NO hand-written YAML/JSON spec to maintain.
+
+How auto-generation works:
+- Each controller method declares its request body with
+  `@blp.arguments(<Validation schema>)` — flask-smorest reads the schema's
+  fields + validators + error messages and emits an OpenAPI `requestBody`.
+- Each controller method declares its response shape with
+  `@blp.response(<status>, <DTO schema>)` — flask-smorest reads the DTO
+  fields and emits the OpenAPI `responses` object.
+- Path + query parameters use `@blp.arguments(<Schema>, location="query")`.
+- Method-level / blueprint-level tags come from the Blueprint name +
+  optional `@blp.doc(tags=[...])`.
+
+Swagger UI is served at `/api/v1/docs`. The JWT auth token entered ONCE
+via the UI's Authorize button is persisted in `localStorage` via
+`persistAuthorization=True`, so every subsequent "Try it" request reuses
+it automatically. No per-request token paste.
+
+```python
+"""Openapi — flask-smorest Api wrapper + Swagger UI registration.
+
+WHY flask-smorest over plain apispec: it reads existing Marshmallow
+schemas with zero annotation duplication. The `@blp.arguments(X)` +
+`@blp.response(200, Y)` decorators replace the standard `flask.Blueprint`
+route + manual request parsing. Marshmallow validation still runs
+exactly as before — the decorator IS the validation invocation now.
+"""
+from typing import Any
+
+from flask import Flask, abort, current_app, request
+from flask_smorest import Api
+
+from app.utils.Settings import settings
+
+
+def _bearer_security_scheme() -> dict[str, Any]:
+    """OpenAPI 3 security scheme telling Swagger UI to use the JWT bearer.
+
+    Once the user clicks Authorize in Swagger UI and pastes their access
+    token, this scheme makes Swagger UI auto-attach
+    `Authorization: Bearer <token>` to every subsequent /try-it request.
+    """
+    return {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": (
+            "Paste your access token (no `Bearer ` prefix). Persisted in "
+            "browser localStorage — entered once, reused for every endpoint."
+        ),
+    }
+
+
+def _docs_gate() -> None:
+    """Production gate on the Swagger UI route.
+
+    Public in dev / staging. In production:
+    - If OPENAPI_DOCS_ENABLED=false → 404 (UI hidden completely).
+    - If OPENAPI_DOCS_TOKEN is set → require ?token=<value> on the request.
+    - Otherwise → require a valid Authorization Bearer token (any logged-in
+      user can see the docs).
+    """
+    if settings.ENV != "production":
+        return  # dev + staging: public
+    if not settings.OPENAPI_DOCS_ENABLED:
+        abort(404)
+    expected = settings.OPENAPI_DOCS_TOKEN
+    if expected:
+        if request.args.get("token", "") != expected:
+            abort(404)  # 404, not 401 — don't reveal existence
+        return
+    # No env token configured — fall through to bearer-token requirement.
+    from app.utils.Auth import token_required  # late import to avoid cycle
+
+    @token_required
+    def _check(current_user) -> None:  # noqa: ARG001 — decorator side effect
+        return
+
+    _check()
+
+
+def configure_openapi(app: Flask) -> Api:
+    """Build the flask-smorest Api wrapper. Returns it so blueprints can register."""
+    # Spec-level config. flask-smorest reads app.config["API_TITLE"] etc.
+    app.config["API_TITLE"] = settings.OPENAPI_TITLE or settings.APP_NAME
+    app.config["API_VERSION"] = settings.OPENAPI_VERSION or settings.APP_VERSION
+    app.config["OPENAPI_VERSION"] = "3.0.3"
+    app.config["OPENAPI_URL_PREFIX"] = "/api/v1"
+    app.config["OPENAPI_JSON_PATH"] = "openapi.json"  # served at /api/v1/openapi.json
+    app.config["OPENAPI_SWAGGER_UI_PATH"] = "docs"    # served at /api/v1/docs
+    app.config["OPENAPI_SWAGGER_UI_URL"] = "https://cdn.jsdelivr.net/npm/swagger-ui-dist/"
+    app.config["OPENAPI_REDOC_PATH"] = "redoc"        # served at /api/v1/redoc
+    app.config["OPENAPI_REDOC_URL"] = (
+        "https://cdn.jsdelivr.net/npm/redoc@next/bundles/redoc.standalone.js"
+    )
+    # WHY persistAuthorization: token entered once in Swagger UI's Authorize
+    # dialog is stored in localStorage and auto-attached to every
+    # subsequent /try-it request. NO per-request token paste.
+    app.config["OPENAPI_SWAGGER_UI_CONFIG"] = {
+        "persistAuthorization": True,
+        "displayRequestDuration": True,
+        "docExpansion": "none",  # tags collapsed by default
+        "filter": True,
+    }
+
+    api = Api(app)
+
+    # Register the JWT bearer security scheme at the spec level. Each
+    # protected route adds `@blp.doc(security=[{"BearerAuth": []}])`.
+    api.spec.components.security_scheme("BearerAuth", _bearer_security_scheme())
+
+    # Gate the UI route in production. flask-smorest registers the UI
+    # endpoint internally; we add a before_request guard ONLY for it.
+    @app.before_request
+    def _swagger_ui_gate():  # noqa: PLW0211 — Flask hook
+        if request.path == "/api/v1/docs":
+            _docs_gate()
+
+    return api
+```
+
+Wiring (in `configuration.py.md` — see also that template's
+`register_api` function):
+
+```python
+# Configuration.py
+from app.utils.Openapi import configure_openapi
+
+api = configure_openapi(app)
+api.register_blueprint(account_blueprint(), url_prefix=None)  # /api/v1 from API_URL_PREFIX
+# api.register_blueprint(<x>_blueprint(), ...)
+```
+
+**Important contract for new endpoints**: every controller method MUST
+declare its schema via `@blp.arguments` (for request body / query) and
+`@blp.response` (for the response DTO). The reviewer Stage 3 enforces
+this. Missing decorators → empty OpenAPI spec → broken Swagger UI.

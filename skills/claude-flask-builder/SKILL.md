@@ -20,11 +20,16 @@ The skill is self-contained — every rule lives in this skill's files.
 
 ## When this skill applies
 
-- Scaffold a new Flask REST API.
+- Scaffold a new Flask REST API (ships Swagger UI at `/api/v1/docs` by
+  default — OpenAPI spec auto-generated from Marshmallow schemas).
 - Extend an existing app of this architecture — add a Controller, Service,
-  Validation, DTO, Model, Migration, Seeder, pytest.
+  Validation, DTO, Model, Migration, Seeder, pytest. New endpoints get
+  documented in the OpenAPI spec automatically via `@blp.arguments` +
+  `@blp.response` decorators (R150).
 - Review Flask code against the standard.
 - Build, migrate, run pytest, deploy.
+- Auto-generate / update API documentation — every Marshmallow schema is
+  already an OpenAPI source.
 
 ## Locked stack
 
@@ -46,6 +51,7 @@ The skill is self-contained — every rule lives in this skill's files.
 | Cron | APScheduler + distributed lock for multi-pod |
 | Container | Multi-stage Dockerfile, non-root, HEALTHCHECK, gunicorn |
 | Tests | pytest + coverage (60% gate) |
+| API docs | OpenAPI 3.x + Swagger UI via `flask-smorest` — **auto-generated from existing Marshmallow validation + DTO schemas** (no hand-written YAML). Swagger UI at `/api/v1/docs` with persistent JWT auth (login once, try every endpoint). |
 
 ## Reference files — read before acting
 

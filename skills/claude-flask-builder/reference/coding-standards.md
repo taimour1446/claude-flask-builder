@@ -108,6 +108,22 @@ Every rule BLOCKING unless marked `[ADVISORY]`.
 ## 12. Scope discipline
 - **R140** Surgical changes only. No unrelated refactors.
 - **R141** No new dependency outside the Locked Stack without explicit user approval.
+
+## 13. API documentation (OpenAPI / Swagger)
+- **R150** Every controller is a `flask_smorest.Blueprint`. Every route
+  handler has `@bp.response(<status>, <Schema>)`; handlers that accept a
+  JSON body also have `@bp.arguments(<ValidationSchema>)`. Every route
+  declares `@bp.doc(security=[])` (public) OR
+  `@bp.doc(security=[{"BearerAuth": []}])` (protected). Missing any of
+  these = empty OpenAPI spec for that endpoint = broken Swagger UI.
+- **R151** Swagger UI (`/api/v1/docs`) is configured with
+  `persistAuthorization=True` so the JWT entered ONCE in the Authorize
+  dialog is reused for every subsequent request. The skill ships this in
+  `patterns.md §16 configure_openapi`; do not remove the
+  `OPENAPI_SWAGGER_UI_CONFIG.persistAuthorization` setting.
+- **R152** The OpenAPI security scheme is `BearerAuth` (HTTP bearer, JWT
+  format). Registered at the spec level by `patterns.md §16`. Routes that
+  require auth reference `BearerAuth` in their `@bp.doc(security=[...])`.
 - **R142** No files outside the architecture layout.
 
 ## Reviewer verdict
